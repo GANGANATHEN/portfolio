@@ -1,5 +1,4 @@
 'use client';
-import React from "react";
 import { BallCanvas } from "./canvas";
 import { technologies } from "@/constants";
 
@@ -10,7 +9,7 @@ const Tech = () => {
         {technologies.map((technology) => (
           <div className="w-28 h-28" key={technology.name}>
             {/* 3D Ball Canvas */}
-            <BallCanvas icon={technology.icon} />
+            <BallCanvas icon={technology.icon.src} />
           </div>
         ))}
       </div>

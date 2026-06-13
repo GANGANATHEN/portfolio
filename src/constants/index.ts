@@ -1,8 +1,8 @@
 // Assets import-a unga folder structure-ku etha mathiri correct-ah kuduthu irukkinga
 import {
-  rjsdev,
-  jadev,
-  pydev,
+  react,
+  node,
+  mongo,
   web,
   javascript,
   typescript,
@@ -40,10 +40,10 @@ export const navLinks = [
 ];
 
 export const services = [
-  { title: "Web Developer", icon: web },
-  { title: "ReactJs Developer", icon: rjsdev },
-  { title: "Java Developer", icon: jadev },
-  { title: "Python Developer", icon: pydev },
+  { title: "Full-Stack Web Developer", icon: web },
+  { title: "Frontend (Next.js & TS)", icon: react },
+  { title: "Backend (Node & Express)", icon: node },
+  { title: "Database (MongoDB)", icon: mongo },
 ];
 
 export const technologies = [

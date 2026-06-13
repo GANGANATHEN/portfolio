@@ -1,7 +1,7 @@
 import logo from "./logo.svg";
-import pydev from "./backend.png";
-import jadev from "./creator.png";
-import rjsdev from "./mobile.png";
+import mongo from "./backend.png";
+import node from "./creator.png";
+import react from "./mobile.png";
 import web from "./web.png";
 import github from "./github.png";
 import menu from "./menu.svg";
@@ -19,7 +19,7 @@ import reactjs from "./tech/reactjs.png";
 import redux from "./tech/redux.png";
 import tailwind from "./tech/tailwind.png";
 import typescript from "./tech/typescript.png";
-import threejs from "./tech/threejs.svg";
+import threejs from "./tech/threejs.png";
 
 import redhat from "./company/redhat.png";
 import ibm from "./company/ibm.png";
@@ -39,9 +39,9 @@ import grade from "./prjectimg/grademark.png"
 
 export {
   logo,
-  rjsdev,
-  jadev,
-  pydev,
+  react,
+  node,
+  mongo,
   web,
   github,
   menu,

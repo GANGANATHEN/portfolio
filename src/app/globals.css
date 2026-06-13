@@ -102,20 +102,22 @@ body {
 
 /* navbar styles */
 .nav-island-container {
+  isolation: isolate;
   background: transparent;
-  backdrop-filter: blur(0px) saturate(100%);
   -webkit-backdrop-filter: blur(0px) saturate(100%);
+  backdrop-filter: blur(0px) saturate(100%);
   border: 1px solid transparent;
   box-shadow: none;
-  transition: background 0.4s ease, backdrop-filter 0.4s ease, -webkit-backdrop-filter 0.4s ease, box-shadow 0.4s ease, border 0.4s ease;
+  transition: background 0.4s ease, -webkit-backdrop-filter 0.4s ease, backdrop-filter 0.4s ease, box-shadow 0.4s ease, border 0.4s ease;
   will-change: width, transform, background, backdrop-filter;
 }
 
 /* Scrolled state - Premium White Glass Active */
 .nav-island-container.active-glass {
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
-  backdrop-filter: blur(25px) saturate(180%);
-  -webkit-backdrop-filter: blur(25px) saturate(180%);
+  -webkit-backdrop-filter: blur(7px) saturate(150%);
+  isolation: isolate;
+  backdrop-filter: blur(7px) saturate(150%);
   border: 1px solid rgba(255, 255, 255, 0.2);
   box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37), 
               inset 0 1px 0 rgba(255, 255, 255, 0.4);

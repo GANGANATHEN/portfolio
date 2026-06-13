@@ -10,8 +10,7 @@ import {
 } from "@react-three/drei";
 import CanvasLoader from "../Loader";
 
-const Ball = ({ imgUrl }: { imgUrl: any }) => {
-  // Oruvela imgUrl object-a iruntha (import html), atha .src-ah access pannunga
+const Ball = ({ imgUrl }: { imgUrl: string | { src: string } }) => {
   const texturePath = typeof imgUrl === "object" ? imgUrl.src : imgUrl;
 
   const [decal] = useTexture([texturePath]);
@@ -19,7 +18,7 @@ const Ball = ({ imgUrl }: { imgUrl: any }) => {
   return (
     <Float speed={1.75} rotationIntensity={1} floatIntensity={2}>
       <ambientLight intensity={0.25} />
-      <directionalLight position={[0, 0, 0.05]} />
+      <directionalLight position={[0, 0, 0.5]} />
       <mesh castShadow receiveShadow scale={2.75}>
         <icosahedronGeometry args={[1, 1]} />
         <meshStandardMaterial
@@ -33,7 +32,6 @@ const Ball = ({ imgUrl }: { imgUrl: any }) => {
           rotation={[2 * Math.PI, 0, 6.25]}
           scale={1}
           map={decal}
-          flatShading
         />
       </mesh>
     </Float>

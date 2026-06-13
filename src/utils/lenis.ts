@@ -1,29 +1,58 @@
-import Lenis from 'lenis';
-import { gsap } from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
+"use client";
+import { useEffect } from "react";
+import Lenis from "lenis";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 
-export const initLenis = () => {
-  const lenis = new Lenis({
-    lerp: 0.1, // Smoothness level (0.1 is smooth, 0.05 is extra smooth)
-    duration: 1.5,
-    smoothWheel: true,
-    smoothTouch: true, // Mobile-kum smooth scroll-ah irukkum
-    syncTouch: true,
-  });
+gsap.registerPlugin(ScrollTrigger);
 
-  function raf(time: number) {
-    lenis.raf(time);
-    requestAnimationFrame(raf);
-  }
+export function useLenisScroll() {
+  useEffect(() => {
+    // 1. Detect if touch device
+    const isTouch =
+      typeof window !== "undefined" &&
+      ("ontouchstart" in window || navigator.maxTouchPoints > 0);
 
-  requestAnimationFrame(raf);
+    // 2. Optimized Lenis Configuration
+    // duration 1.2 is the sweet spot for smooth vs snappy
+    const lenis = new Lenis({
+      smoothWheel: true,
+      smoothTouch: isTouch,
+      syncTouch: isTouch,
+      
+      // lerp 0.1 is responsive, 0.05 is floaty. 
+      // 0.08 is the perfect balance for portfolios.
+      lerp: isTouch ? 0.1 : 0.12, 
+      duration: 1.4, 
+      
+      wheelMultiplier: 1.0, // 1.0 = normal scroll speed
+      touchMultiplier: 1.5, // slightly faster on touch for mobile feel
+      easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)), 
+    });
 
-  // GSAP ScrollTrigger sync
-  lenis.on('scroll', ScrollTrigger.update);
-  gsap.ticker.add((time) => {
-    lenis.raf(time * 1000);
-  });
-  gsap.ticker.lagSmoothing(0);
+    // 3. GSAP Ticker Sync
+    const raf = (time: number) => {
+      lenis.raf(time * 1000);
+    };
 
-  return lenis; // Cleanup-kku return panrom
-};
+    gsap.ticker.add(raf);
+    gsap.ticker.lagSmoothing(0);
+
+    // 4. ScrollTrigger Sync
+    lenis.on("scroll", ScrollTrigger.update);
+
+    // 5. Important: Ensure ScrollTrigger respects Lenis
+    ScrollTrigger.defaults({ scroller: document.body });
+
+    // Refresh after everything is mounted
+    requestAnimationFrame(() => {
+      ScrollTrigger.refresh();
+    });
+
+    // Cleanup
+    return () => {
+      lenis.destroy();
+      gsap.ticker.remove(raf);
+    };
+  }, []);
+}
