@@ -76,7 +76,7 @@ const Hero = () => {
         </div>
       </div>
 
-      <div className="absolute left-1/2 -translate-x-1/2 xs:bottom-10 bottom-10 flex justify-center items-center z-20 pointer-events-none">
+      <div className="absolute left-1/2 -translate-x-1/2 bottom-0 flex justify-center items-center z-20 pointer-events-none">
         <a href="#about" className="pointer-events-auto" title="About section" aria-label="About section">
           <div className="w-8.75 h-16 rounded-3xl border-4 border-secondary flex justify-center items-start p-2 opacity-80 hover:opacity-100 transition-opacity cursor-pointer">
             <div className="scroll-indicator w-3 h-3 rounded-full bg-secondary mb-1" aria-hidden="true" />

@@ -1,5 +1,6 @@
 "use client";
 import About from "@/components/About";
+import MultiShapeMorph from "@/components/background/MultiShapeMorph";
 import Contact from "@/components/Contact";
 import Experience from "@/components/Experience";
 import Feedbacks from "@/components/Feedbacks";
@@ -16,9 +17,11 @@ export default function Home() {
         <Navbar />
         <Hero />
       </div>
-      <About />
-      <Experience />
-      <Tech />
+      <MultiShapeMorph>
+        <About />
+        <Experience />
+        <Tech />
+      </MultiShapeMorph>
       <Works />
       <Feedbacks />
       <Contact />

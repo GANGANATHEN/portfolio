@@ -1,122 +1,71 @@
 "use client";
-import React, { useRef } from "react";
+import React, { useRef, useEffect } from "react";
 import { useForm, ValidationError } from "@formspree/react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { EarthCanvas } from "./canvas";
+import ParticleBackground from "./background/ParticleBackground";
 
 const Contact = () => {
-  const [state, handleSubmit] = useForm("mgvwlylr");
+  const [state, handleSubmit, reset] = useForm("mgvwlylr");
   const containerRef = useRef(null);
 
-  // GSAP Animation
-  useGSAP(
-    () => {
-      gsap.from(".contact-form", {
-        x: -100,
-        opacity: 0,
-        duration: 1,
-        ease: "power2.out",
-      });
-      gsap.from(".earth-canvas", {
-        x: 100,
-        opacity: 0,
-        duration: 1,
-        ease: "power2.out",
-      });
-    },
-    { scope: containerRef },
-  );
+  useEffect(() => {
+    if (state.succeeded) {
+      const timer = setTimeout(() => {
+        reset(); 
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [state.succeeded, reset]);
 
-  if (state.succeeded) {
-    return (
-      <div className="xl:mt-12 flex flex-col gap-10 overflow-hidden max-w-7xl mx-auto py-16 px-6 relative z-0">
-        <p className="text-center text-white text-[20px]">
-          Thanks for sending Message...!
-        </p>
-        <div className="h-[350px] md:h-[550px]">
+  useGSAP(() => {
+    gsap.from(".contact-card", { y: 50, opacity: 0, duration: 1, ease: "power4.out" });
+  }, { scope: containerRef });
+
+  return (
+    <section id="contact" ref={containerRef} className="py-24 px-6 relative overflow-hidden">
+      <ParticleBackground />
+      <div className="max-w-7xl mx-auto flex lg:flex-row flex-col-reverse gap-16 items-center">
+        
+        <div className="contact-card flex-[0.6] w-full bg-black-100/50 backdrop-blur-xl border border-white/5 p-8 md:p-12 rounded-[2rem] shadow-2xl relative overflow-hidden">
+          
+          {/* Status Overlay */}
+          {state.succeeded && (
+            <div className="absolute inset-0 z-20 bg-black-100/90 backdrop-blur-md flex flex-col items-center justify-center">
+              <div className="w-16 h-16 bg-cyan-500/20 rounded-full flex items-center justify-center mb-6 animate-pulse">
+                <span className="text-3xl">✨</span>
+              </div>
+              <h3 className="text-white text-2xl font-bold">Magic Received!</h3>
+              <p className="text-secondary mt-2">Resetting form...</p>
+            </div>
+          )}
+
+          <p className="text-cyan-400 font-bold uppercase tracking-widest text-sm mb-2">Connect with me</p>
+          <h3 className="text-white font-black text-4xl md:text-5xl mb-12">Let&apos;s build <span className="text-transparent bg-clip-text bg-linear-to-r from-cyan-400 to-accent">magic.</span></h3>
+
+          <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <input type="text" name="name" required placeholder="Name" className="bg-tertiary p-4 rounded-xl text-white border border-transparent focus:border-cyan-400 outline-none transition-all" />
+              <input type="email" name="email" required placeholder="Email" className="bg-tertiary p-4 rounded-xl text-white border border-transparent focus:border-cyan-400 outline-none transition-all" />
+            </div>
+            <textarea name="message" required placeholder="Your message..." rows={5} className="bg-tertiary p-4 rounded-xl text-white border border-transparent focus:border-cyan-400 outline-none transition-all w-full" />
+            
+            {state.errors && <p className="text-red-400 text-sm">Something went wrong. Please try again.</p>}
+
+            <button type="submit" disabled={state.submitting}
+              className="w-full bg-gradient-to-r from-cyan-500 to-accent text-white font-bold py-4 rounded-xl hover:scale-[1.02] transition-all active:scale-95 shadow-lg shadow-cyan-500/20">
+              {state.submitting ? "Sending..." : "Send Message"}
+            </button>
+          </form>
+        </div>
+
+        <div className="flex-1 w-full h-[300px] sm:h-[400px] lg:h-[600px] relative">
+          <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/20 to-accent/20 blur-[150px] rounded-full animate-pulse" />
           <EarthCanvas />
         </div>
       </div>
-    );
-  }
-
-  return (
-    <div
-      id="contact"
-      ref={containerRef}
-      className="xl:mt-12 flex xl:flex-row flex-col-reverse gap-10 overflow-hidden max-w-7xl mx-auto py-16 px-6 relative z-0"
-    >
-      {/* GSAP Target: contact-form */}
-      <div className="contact-form flex-[0.5] bg-black-100 p-8 rounded-2xl">
-        <p className="text-secondary text-[14px] uppercase tracking-wider">
-          Get in touch
-        </p>
-        <h3 className="text-white font-black md:text-[60px] sm:text-[50px] xs:text-[40px] text-[30px]">
-          Contact.
-        </h3>
-
-        <form onSubmit={handleSubmit} className="mt-12 flex flex-col gap-8">
-          <label className="flex flex-col">
-            <span className="text-white font-medium mb-4">Your Name</span>
-            <input
-              type="text"
-              name="name"
-              required
-              placeholder="What's your good name?"
-              className="bg-tertiary py-4 px-6 placeholder:text-secondary text-white rounded-lg outline-none border-none font-medium"
-            />
-          </label>
-
-          <label className="flex flex-col">
-            <span className="text-white font-medium mb-4">Your email</span>
-            <input
-              id="email"
-              type="email"
-              name="email"
-              required
-              placeholder="What's your email address?"
-              className="bg-tertiary py-4 px-6 placeholder:text-secondary text-white rounded-lg outline-none border-none font-medium"
-            />
-            <ValidationError
-              prefix="Email"
-              field="email"
-              errors={state.errors}
-            />
-          </label>
-
-          <label className="flex flex-col">
-            <span className="text-white font-medium mb-4">Your Message</span>
-            <textarea
-              rows={7}
-              id="message"
-              name="message"
-              required
-              placeholder="What you want to say?"
-              className="bg-tertiary py-4 px-6 placeholder:text-secondary text-white rounded-lg outline-none border-none font-medium"
-            />
-            <ValidationError
-              prefix="Message"
-              field="message"
-              errors={state.errors}
-            />
-          </label>
-
-          <button
-            type="submit"
-            disabled={state.submitting}
-            className="bg-tertiary py-3 px-8 rounded-xl outline-none w-fit text-white font-bold shadow-md shadow-primary hover:bg-white hover:text-black transition-colors"
-          >
-            {state.submitting ? "Sending..." : "Send"}
-          </button>
-        </form>
-      </div>
-
-      {/* GSAP Target: earth-canvas */}
-      <div className="earth-canvas xl:flex-1 xl:h-auto md:h-[550px] h-[350px]">
-        <EarthCanvas />
-      </div>
-    </div>
+    </section>
   );
 };
 
