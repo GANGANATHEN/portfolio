@@ -26,16 +26,19 @@ body {
 }
 
 /* remove scrollbar */
-.no1-scrollbar::-webkit-scrollbar {
-  display: none !important; /* Hide scrollbar for Chrome, Safari, and Opera */
-  -ms-overflow-style: none; /* Hide scrollbar for IE and Edge */
-  scrollbar-width: none; /* Hide scrollbar for Firefox */
-  width: 0;
-  background: transparent;
-}
-
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px !important;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #3b82f6 !important; /* Unga accent color */
+  border-radius: 20px !important;
 }
 
 /* my own colors */
@@ -108,19 +111,29 @@ body {
   backdrop-filter: blur(0px) saturate(100%);
   border: 1px solid transparent;
   box-shadow: none;
-  transition: background 0.4s ease, -webkit-backdrop-filter 0.4s ease, backdrop-filter 0.4s ease, box-shadow 0.4s ease, border 0.4s ease;
+  transition:
+    background 0.4s ease,
+    -webkit-backdrop-filter 0.4s ease,
+    backdrop-filter 0.4s ease,
+    box-shadow 0.4s ease,
+    border 0.4s ease;
   will-change: width, transform, background, backdrop-filter;
 }
 
 /* Scrolled state - Premium White Glass Active */
 .nav-island-container.active-glass {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0.05) 100%
+  );
   -webkit-backdrop-filter: blur(7px) saturate(150%);
   isolation: isolate;
   backdrop-filter: blur(7px) saturate(150%);
   border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37), 
-              inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  box-shadow:
+    0 8px 32px 0 rgba(0, 0, 0, 0.37),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
 /* For magnetic links */

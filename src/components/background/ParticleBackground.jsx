@@ -32,7 +32,13 @@ const ParticleBackground = () => {
       update() {
         this.x += this.speedX;
         this.y += this.speedY;
-        if (this.x < 0 || this.x > canvas.width || this.y < 0 || this.y > canvas.height) this.reset();
+        if (
+          this.x < 0 ||
+          this.x > canvas.width ||
+          this.y < 0 ||
+          this.y > canvas.height
+        )
+          this.reset();
       }
       draw() {
         ctx.fillStyle = "rgba(100, 200, 255, 0.5)";
@@ -46,7 +52,10 @@ const ParticleBackground = () => {
 
     const animate = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      particles.forEach((p) => { p.update(); p.draw(); });
+      particles.forEach((p) => {
+        p.update();
+        p.draw();
+      });
       requestAnimationFrame(animate);
     };
     animate();
@@ -57,7 +66,7 @@ const ParticleBackground = () => {
   return (
     <canvas
       ref={canvasRef}
-      className="absolute top-0 left-0 w-full h-full -z-10 bg-tertiary"
+      className="absolute top-0 left-0 w-full h-full -z-10 " //bg-tertiary
     />
   );
 };

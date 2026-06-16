@@ -1,30 +1,56 @@
 "use client";
+import { useEffect } from "react";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 import About from "@/components/About";
 import MultiShapeMorph from "@/components/background/MultiShapeMorph";
+import Chatbot from "@/components/Chatbot";
 import Contact from "@/components/Contact";
 import Experience from "@/components/Experience";
-import Feedbacks from "@/components/Feedbacks";
 import Hero from "@/components/Hero";
 import Navbar from "@/components/Navbar";
 import Tech from "@/components/Tech";
 import Works from "@/components/Works";
 
 export default function Home() {
+  useEffect(() => {
+    gsap.registerPlugin(ScrollTrigger);
+
+    ScrollTrigger.create({
+      trigger: "#chatbot-section",
+      start: "top 80%",
+      end: "bottom 40%",
+      onEnter: () =>
+        gsap.to("#main-nav", { y: -100, opacity: 0, duration: 0.5 }),
+      onLeave: () => gsap.to("#main-nav", { y: 0, opacity: 1, duration: 0.5 }),
+      onEnterBack: () =>
+        gsap.to("#main-nav", { y: -100, opacity: 0, duration: 0.5 }),
+      onLeaveBack: () =>
+        gsap.to("#main-nav", { y: 0, opacity: 1, duration: 0.5 }),
+    });
+  }, []);
+
   return (
     <div className="relative z-0 bg-primary">
+      <div id="main-nav" className="fixed top-0 w-full z-50">
+        <Navbar />
+      </div>
       {/* Hero Section */}
       <div className="h-screen w-full bg-hero-pattern bg-cover bg-no-repeat bg-center overflow-hidden">
-        <Navbar />
         <Hero />
       </div>
+      {/* other section */}
       <MultiShapeMorph>
         <About />
         <Experience />
         <Tech />
       </MultiShapeMorph>
       <Works />
-      <Feedbacks />
-      <Contact />
+      <Chatbot />
+
+      <div id="chatbot-section">
+        <Contact />
+      </div>
     </div>
   );
 }

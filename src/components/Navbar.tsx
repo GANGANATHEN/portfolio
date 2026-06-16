@@ -107,7 +107,7 @@ const Navbar = () => {
   return (
     <nav
       ref={containerRef}
-      className="w-full fixed top-0 z-50 flex justify-center pointer-events-none"
+      className="w-full flex justify-center pointer-events-none"
     >
       <div
         ref={innerNavRef}

@@ -24,7 +24,7 @@ const Contact = () => {
   }, { scope: containerRef });
 
   return (
-    <section id="contact" ref={containerRef} className="py-24 px-6 relative overflow-hidden">
+    <section id="contact" ref={containerRef} className="z-10 py-24 px-6 relative overflow-hidden bg-[#020205]">
       <ParticleBackground />
       <div className="max-w-7xl mx-auto flex lg:flex-row flex-col-reverse gap-16 items-center">
         
