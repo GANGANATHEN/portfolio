@@ -4,7 +4,7 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import About from "@/components/About";
 import MultiShapeMorph from "@/components/background/MultiShapeMorph";
-import Chatbot from "@/components/Chatbot";
+import Chatbot from "@/components/Bot";
 import Contact from "@/components/Contact";
 import Experience from "@/components/Experience";
 import Hero from "@/components/Hero";
@@ -46,8 +46,8 @@ export default function Home() {
         <Tech />
       </MultiShapeMorph>
       <Works />
+      {/* <Chatbot /> */}
       <Chatbot />
-
       <div id="chatbot-section">
         <Contact />
       </div>

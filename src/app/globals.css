@@ -30,17 +30,6 @@ body {
   display: none;
 }
 
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px !important;
-}
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent !important;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: #3b82f6 !important; /* Unga accent color */
-  border-radius: 20px !important;
-}
-
 /* my own colors */
 @theme {
   /* Colors */
@@ -61,6 +50,21 @@ body {
 @layer base {
   body {
     @apply bg-primary text-white;
+  }
+}
+
+@layer utilities {
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px !important;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent !important;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: var(
+      --color-primary
+    ) !important; /* CSS variable-a use pannunga */
+    border-radius: 20px !important;
   }
 }
 
