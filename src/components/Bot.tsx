@@ -15,6 +15,8 @@ const Chatbot = () => {
   const [messages, setMessages] = useState<Message[]>([
     { role: "bot", text: "Hello! Ready to explore my portfolio?" },
   ]);
+  const [userName, setUserName] = useState("Visitor");
+  const [botNickname, setBotNickname] = useState("Ganganathan's AI Assistant");
   const [input, setInput] = useState<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const chatRef = useRef<HTMLDivElement>(null);
@@ -38,13 +40,48 @@ const Chatbot = () => {
   const handleSend = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
+
     const userMsg: Message = { role: "user", text: input };
-    setMessages((prev) => [...prev, userMsg]);
+    const updatedMessages = [...messages, userMsg];
+    setMessages(updatedMessages); // Update UI with user message
     setInput("");
+
+    let currentName = userName;
+    let botReply = "";
+
+    // 1. Name logic
+    if (input.toLowerCase().includes("my name is")) {
+      const name = input.split("is")[1].trim();
+      setUserName(name);
+      currentName = name;
+      botReply = `Nice to meet you, ${name}! I'll remember that.`;
+    }
+
+    // 2. Nickname logic
+    if (input.toLowerCase().includes("nickname")) {
+      const namePart =
+        input.split("is")[1]?.trim() || input.split("called")[1]?.trim();
+      if (namePart) {
+        setBotNickname(namePart);
+        botReply = `Got it! From now on, call me ${namePart}.`;
+      }
+    }
+
+    // 3. If we generated a custom reply, add it to UI and stop here
+    if (botReply) {
+      setMessages((prev) => [...prev, { role: "bot", text: botReply }]);
+      return; // Don't call the API if we already have the answer
+    }
+
+    // 4. API Call (Only if no custom reply was generated)
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
-        body: JSON.stringify({ prompt: input }),
+        body: JSON.stringify({
+          history: updatedMessages,
+          userName: currentName,
+          botNickname: botNickname,
+        }),
       });
       const data = await res.json();
       setMessages((prev) => [...prev, { role: "bot", text: data.reply }]);

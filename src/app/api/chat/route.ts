@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   try {
-    const { prompt } = await req.json();
+    // 1. Extract history and userName from the request body
+    const { history, userName,botNickname } = await req.json();
     const API_KEY = process.env.API_KEY;
 
     if (!API_KEY) {
@@ -14,9 +15,27 @@ export async function POST(req: Request) {
       );
     }
 
-    // console.log("Sending request to Groq...");
+    // 2. Format history into the structure Groq/OpenAI expects
+    type ChatMessage = {
+      role: "user" | "assistant" | "system" | string;
+      text: string;
+    };
 
-    // Groq API Request
+    const formattedMessages = history.map((msg: ChatMessage) => ({
+      role: msg.role === "user" ? "user" : "assistant",
+      content: msg.text,
+    }));
+
+    // 3. Construct the message array with the system prompt first
+    const messages = [
+      {
+        role: "system",
+        content: getSystemPrompt(userName, botNickname),
+      },
+      ...formattedMessages,
+    ];
+
+    // 4. Send request to Groq
     const response = await fetch(
       "https://api.groq.com/openai/v1/chat/completions",
       {
@@ -27,20 +46,13 @@ export async function POST(req: Request) {
         },
         body: JSON.stringify({
           model: "llama-3.3-70b-versatile",
-          messages: [
-            {
-              role: "system",
-              content: getSystemPrompt(),
-            },
-            { role: "user", content: prompt },
-          ],
+          messages: messages,
         }),
       },
     );
 
     const data = await response.json();
-    // console.log("Groq Response Data:", data);
-    // Groq error handle panna
+
     if (data.error) {
       console.error("Groq API Error:", JSON.stringify(data.error));
       return NextResponse.json(
@@ -49,7 +61,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Response extract panna
     return NextResponse.json({ reply: data.choices[0].message.content });
   } catch (error) {
     console.error("Internal Server Error:", error);
