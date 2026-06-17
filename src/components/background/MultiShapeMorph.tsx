@@ -95,8 +95,8 @@ export default function MultiShapeMorph({
     };
 
     class ParticleImpl implements Particle {
-      x = Math.random() * canvas.width;
-      y = Math.random() * canvas.height;
+      x = Math.random() * canvas!.width;
+      y = Math.random() * canvas!.height;
       targetX = centerX;
       targetY = centerY;
       vx = 0;
