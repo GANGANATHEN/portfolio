@@ -1,7 +1,7 @@
 "use client";
-import { useEffect } from "react";
-import gsap from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
+// import { useEffect } from "react";
+// import gsap from "gsap";
+// import { ScrollTrigger } from "gsap/ScrollTrigger";
 import About from "@/components/About";
 import MultiShapeMorph from "@/components/background/MultiShapeMorph";
 import Chatbot from "@/components/Bot";
@@ -11,24 +11,25 @@ import Hero from "@/components/Hero";
 import Navbar from "@/components/Navbar";
 import Tech from "@/components/Tech";
 import Works from "@/components/Works";
+import Feedbacks from "@/components/Feedbacks";
 
 export default function Home() {
-  useEffect(() => {
-    gsap.registerPlugin(ScrollTrigger);
+  // useEffect(() => {
+  //   gsap.registerPlugin(ScrollTrigger);
 
-    ScrollTrigger.create({
-      trigger: "#chatbot-section",
-      start: "top 80%",
-      end: "bottom 40%",
-      onEnter: () =>
-        gsap.to("#main-nav", { y: -100, opacity: 0, duration: 0.5 }),
-      onLeave: () => gsap.to("#main-nav", { y: 0, opacity: 1, duration: 0.5 }),
-      onEnterBack: () =>
-        gsap.to("#main-nav", { y: -100, opacity: 0, duration: 0.5 }),
-      onLeaveBack: () =>
-        gsap.to("#main-nav", { y: 0, opacity: 1, duration: 0.5 }),
-    });
-  }, []);
+  //   ScrollTrigger.create({
+  //     trigger: "#chatbot-section",
+  //     start: "top 80%",
+  //     end: "top 80%",
+  //     onEnter: () =>
+  //       gsap.to("#main-nav", { y: -100, opacity: 0, duration: 0.5 }),
+  //     onLeave: () => gsap.to("#main-nav", { y: 0, opacity: 1, duration: 0.5 }),
+  //     onEnterBack: () =>
+  //       gsap.to("#main-nav", { y: -100, opacity: 0, duration: 0.5 }),
+  //     onLeaveBack: () =>
+  //       gsap.to("#main-nav", { y: 0, opacity: 1, duration: 0.5 }),
+  //   });
+  // }, []);
 
   return (
     <div className="relative z-0 bg-primary">
@@ -46,6 +47,7 @@ export default function Home() {
         <Tech />
       </MultiShapeMorph>
       <Works />
+      <Feedbacks />
       {/* <Chatbot /> */}
       <Chatbot />
       <div id="chatbot-section">

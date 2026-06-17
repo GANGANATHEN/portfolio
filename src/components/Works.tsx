@@ -98,6 +98,8 @@ const Works = () => {
                 href={project.source_code_link}
                 target="_blank"
                 rel="noopener noreferrer"
+                title={`View ${project.name} source code on GitHub`}
+                aria-label={`View ${project.name} source code on GitHub`}
                 className="absolute top-6 right-6 z-20 w-12 h-12 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center border border-white/10 hover:bg-cyan-500 transition-colors"
               >
                 <Image src={git} alt="github" width={22} height={22} />
