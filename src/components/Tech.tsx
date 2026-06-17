@@ -4,10 +4,10 @@ import { technologies } from "@/constants";
 
 const Tech = () => {
   return (
-    <section className="max-w-7xl mx-auto px-6 sm:px-16 py-16">
+    <section className="padding py-16">
       <div className="flex flex-row flex-wrap justify-center gap-10">
         {technologies.map((technology) => (
-          <div className="w-28 h-28" key={technology.name}>
+          <div className="w-22 h-22 sm:w-28 sm:h-28 2xl:w-32 2xl:h-32 cursor-grab active:cursor-grabbing" key={technology.name}>
             {/* 3D Ball Canvas */}
             <BallCanvas icon={technology.icon.src} />
           </div>

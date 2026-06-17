@@ -26,7 +26,7 @@ const Contact = () => {
   return (
     <section id="contact" ref={containerRef} className="min-h-screen z-10 py-24 px-6 relative overflow-hidden bg-[#020205]">
       <ParticleBackground />
-      <div className="max-w-7xl mx-auto flex lg:flex-row flex-col-reverse gap-16 items-center">
+      <div className="padding flex lg:flex-row flex-col-reverse gap-16 items-center">
         
         <div className="contact-card flex-[0.6] w-full bg-black-100/50 backdrop-blur-xl border border-white/5 p-8 md:p-12 rounded-4xl shadow-2xl relative overflow-hidden">
           
@@ -60,7 +60,7 @@ const Contact = () => {
           </form>
         </div>
 
-        <div className="flex-1 w-full h-75 sm:h-100 lg:h-150 relative">
+        <div className="flex-1 w-full h-275 sm:h-100 lg:h-150 relative ">
           <div className="absolute inset-0 bg-linear-to-tr from-cyan-500/20 to-accent/20 blur-[150px] rounded-full animate-pulse" />
           <EarthCanvas />
         </div>

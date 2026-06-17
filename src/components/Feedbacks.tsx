@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 
 const Feedbacks = () => {
-  
+
   type Feedback = {
     id: string | number;
     name: string;
@@ -52,7 +52,7 @@ const Feedbacks = () => {
   };
 
   return (
-    <section className="py-12 px-6 md:px-20 bg-[#0a0a0c] rounded-[2rem] border border-white/5 mx-4">
+    <section className="py-12 px-6 md:px-20 bg-[#0a0a0c] rounded-4xl border border-white/5 mx-4">
       {/* Header */}
       <div className="flex items-center justify-between mb-10">
         <h2 className="text-white text-3xl font-black tracking-tight">
@@ -66,7 +66,7 @@ const Feedbacks = () => {
       {/* Input Box - Modern Style */}
       <form
         onSubmit={handleSubmit}
-        className="bg-white/[0.03] p-6 rounded-3xl border border-white/5 mb-12"
+        className="bg-white/3 p-6 rounded-3xl border border-white/5 mb-12"
       >
         <div className="flex gap-4">
           <div className="w-12 h-12 rounded-full bg-accent/20 flex items-center justify-center text-accent font-bold">
@@ -104,10 +104,10 @@ const Feedbacks = () => {
         {feedbacks.map((f) => (
           <div
             key={f.id}
-            className="feedback-card p-6 bg-white/[0.02] rounded-2xl border border-white/5 hover:border-accent/30 transition-all"
+            className="feedback-card p-6 bg-white/2 rounded-2xl border border-white/5 hover:border-accent/30 transition-all"
           >
             <div className="flex items-center gap-4 mb-4">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-accent to-purple-500 flex items-center justify-center text-white font-bold text-xs">
+              <div className="w-10 h-10 rounded-full bg-linear-to-tr from-accent to-purple-500 flex items-center justify-center text-white font-bold text-xs">
                 {f.name.charAt(0).toUpperCase()}
               </div>
               <div>

@@ -1,5 +1,5 @@
 "use client";
-import React, { useRef } from "react";
+import { useRef } from "react";
 import { useGSAP } from "@gsap/react";
 import {
   revealText,
@@ -12,7 +12,7 @@ import { ComputersCanvas } from "./canvas";
 
 const Hero = () => {
   const container = useRef<HTMLElement>(null);
-  const name = "demo";
+  const name = "demi";
 
   useGSAP(
     () => {
@@ -37,7 +37,7 @@ const Hero = () => {
         <ComputersCanvas />
       </div>
 
-      <div className="absolute inset-0 top-30 max-w-7xl px-6 sm:px-16 flex flex-row items-start gap-5 z-10 pointer-events-none">
+      <div className="absolute inset-0 top-20 px-6 sm:px-16 flex flex-row items-start gap-5 z-10 pointer-events-none">
         {/* Graphics part */}
         <div className="flex flex-col justify-center items-center mt-5">
           <div className="hero-dot w-5 h-5 rounded-full bg-accent" />
@@ -46,8 +46,8 @@ const Hero = () => {
 
         {/* Text content part */}
         <div>
-          <div className="overflow-hidden py-1">
-            <h1 className="hero-text text-white font-black lg:text-[80px] sm:text-[60px] text-[40px] mt-2">
+          <div className="overflow-hidden py-1 2xl:mt-4">
+            <h1 className="hero-text text-white font-black 2xl:text-[90px] lg:text-[80px] sm:text-[60px] text-[40px] mt-2">
               Hi, I&apos;m{" "}
               <span
                 className="text-orange-300 whitespace-nowrap"
@@ -67,7 +67,7 @@ const Hero = () => {
           </div>
 
           <div className="overflow-hidden py-1 mt-2">
-            <p className="hero-text text-[#dfd9ff] font-medium lg:text-[30px] sm:text-[26px]">
+            <p className="hero-text text-[#dfd9ff] font-medium lg:text-[30px] sm:text-[26px] text-[20px]">
               I build end-to-end web experiences,
               <br className="sm:block hidden" />
               crafting intuitive interfaces and scalable applications.
