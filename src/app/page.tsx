@@ -1,5 +1,5 @@
 "use client";
-// import { useEffect } from "react";
+import { useEffect, useState } from "react";
 // import gsap from "gsap";
 // import { ScrollTrigger } from "gsap/ScrollTrigger";
 import About from "@/components/About";
@@ -31,13 +31,31 @@ export default function Home() {
   //   });
   // }, []);
 
+  const [extraHeight, setExtraHeight] = useState(0);
+
+  useEffect(() => {
+    const update = () => {
+      if (window.innerWidth < 1024) {
+        setExtraHeight(window.innerHeight * 0.32);
+      } else {
+        setExtraHeight(0);
+      }
+    };
+
+    update();
+    window.addEventListener("resize", update);
+    console.log(extraHeight);
+
+    return () => window.removeEventListener("resize", update);
+  }, [extraHeight]);
+
   return (
     <div className="relative z-0 bg-primary">
       <div id="main-nav" className="fixed top-0 w-full z-50">
         <Navbar />
       </div>
       {/* Hero Section */}
-      <div className="h-screen w-full bg-hero-pattern bg-cover bg-no-repeat bg-center overflow-hidden">
+      <div className="w-full bg-hero-pattern bg-cover bg-no-repeat bg-center overflow-hidden">
         <Hero />
       </div>
       {/* other section */}
@@ -48,11 +66,19 @@ export default function Home() {
       </MultiShapeMorph>
       <Works />
       <Feedbacks />
-      {/* <Chatbot /> */}
       <Chatbot />
       <div id="chatbot-section">
         <Contact />
       </div>
+      <div className="h-dvh border-2 border-red-600">demo</div>
+      {/* <div className="h-dvh border-2 border-red-600">demo</div>
+      <div className="h-dvh border-2 border-red-600">demo</div>
+      <div className="h-dvh border-2 border-red-600">demo</div>
+      <div className="h-dvh border-2 border-red-600">demo</div> */}
+      {/* <div
+        className="extr-space border-2 border-red-600"
+        style={{ height: extraHeight }}
+      ></div> */}
     </div>
   );
 }

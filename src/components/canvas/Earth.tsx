@@ -62,12 +62,12 @@ const EarthCanvas = () => {
       }}
       style={{
         width: "100%",
-        height: "100%", // Ensure the canvas fills its container
+        height: "100%",
         cursor: isHovered ? (isDragging ? "grabbing" : "grab") : "auto",
       }}
     >
       <Suspense fallback={<CanvasLoader />}>
-        <OrbitControls
+        {/* <OrbitControls
           autoRotate
           enableZoom={false}
           maxPolarAngle={Math.PI / 2}
@@ -75,7 +75,8 @@ const EarthCanvas = () => {
           enableRotate={isHovered || isDragging}
           onStart={() => setIsDragging(true)}
           onEnd={() => setIsDragging(false)}
-        />
+        /> */}
+        <OrbitControls enabled={false} />
         <Earth setHovered={setIsHovered} isMobile={isMobile} />
         <Preload all />
       </Suspense>

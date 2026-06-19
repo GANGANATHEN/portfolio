@@ -1,5 +1,5 @@
 "use client";
-import { useRef } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useGSAP } from "@gsap/react";
 import {
   revealText,
@@ -12,32 +12,40 @@ import { ComputersCanvas } from "./canvas";
 
 const Hero = () => {
   const container = useRef<HTMLElement>(null);
+  const [isMounted, setIsMounted] = useState(false);
   const name = "demo";
 
   useGSAP(
     () => {
-      popIn(".hero-dot", 0.2);
-      drawLineVertical(".hero-line", 0.5);
+      if (isMounted) {
+        popIn(".hero-dot", 0.2);
+        drawLineVertical(".hero-line", 0.5);
 
-      revealText(".hero-text", 0.8);
+        revealText(".hero-text", 0.8);
 
-      revealChars(".hero-char", 1.2);
+        revealChars(".hero-char", 1.2);
 
-      floatAnimation(".scroll-indicator");
+        floatAnimation(".scroll-indicator");
+      }
     },
-    { scope: container },
+    { scope: container, dependencies: [isMounted] },
   );
+
+  useEffect(() => {
+    const rafId = requestAnimationFrame(() => {
+      setIsMounted(true);
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, []);
+
+  if (!isMounted) return null;
 
   return (
     <section
       ref={container}
-      className="relative w-full h-screen padding overflow-hidden"
+      className="relative w-full h-dvh padding overflow-hidden"
     >
-      <div className="absolute inset-0 z-0 cursor-grab active:cursor-grabbing">
-        <ComputersCanvas />
-      </div>
-
-      <div className="absolute inset-0 top-20 px-6 sm:px-16 flex flex-row items-start gap-5 z-10 pointer-events-none">
+      <div className="relative mt-20 flex flex-row items-start gap-5 z-10 pointer-events-none">
         {/* Graphics part */}
         <div className="flex flex-col justify-center items-center mt-5">
           <div className="hero-dot w-5 h-5 rounded-full bg-accent" />
@@ -47,7 +55,7 @@ const Hero = () => {
         {/* Text content part */}
         <div>
           <div className="overflow-hidden py-1 2xl:mt-4">
-            <h1 className="hero-text text-white font-black 2xl:text-[90px] lg:text-[80px] sm:text-[60px] text-[40px] mt-2">
+            <h1 className="hero-text text-white font-black 2xl:text-[90px] lg:text-[70px] sm:text-[50px] text-[40px] max-[375px]:text-[30px] mt-2 leading-snug">
               Hi, I&apos;m{" "}
               <span
                 className="text-orange-300 whitespace-nowrap"
@@ -67,7 +75,7 @@ const Hero = () => {
           </div>
 
           <div className="overflow-hidden py-1 mt-2">
-            <p className="hero-text text-[#dfd9ff] font-medium lg:text-[30px] sm:text-[26px] text-[20px]">
+            <p className="hero-text text-white font-medium lg:text-[30px] sm:text-[26px] text-[20px] max-[375px]:text-[16px]">
               I build end-to-end web experiences,
               <br className="sm:block hidden" />
               crafting intuitive interfaces and scalable applications.
@@ -76,10 +84,28 @@ const Hero = () => {
         </div>
       </div>
 
+      <div
+        className="absolute top-0 inset-0  z-0 cursor-grab active:cursor-grabbing 
+        lg:[@media(min-height:700px)]:-top-30 
+        lg:[@media(min-height:750px)]:-top-50 lg:[@media(min-height:800px)]:-top-70 
+        lg:[@media(min-height:900px)]:-top-90
+       "
+      >
+        <ComputersCanvas />
+      </div>
+
       <div className="absolute left-1/2 -translate-x-1/2 bottom-0 flex justify-center items-center z-20 pointer-events-none">
-        <a href="#about" className="pointer-events-auto" title="About section" aria-label="About section">
-          <div className="w-8.75 h-16 rounded-3xl border-4 border-secondary flex justify-center items-start p-2 opacity-80 hover:opacity-100 transition-opacity cursor-pointer">
-            <div className="scroll-indicator w-3 h-3 rounded-full bg-secondary mb-1" aria-hidden="true" />
+        <a
+          href="#about"
+          className="pointer-events-auto"
+          title="About section"
+          aria-label="About section"
+        >
+          <div className="w-6 h-12 sm:w-7 sm:h-14 md:w-8 md:h-16 2xl:w-8.75 2xl:h-16 rounded-3xl border-[3px] sm:border-4 border-secondary flex justify-center items-start p-1 md:p-1.5 2xl:p-2 opacity-80 hover:opacity-100 transition-opacity cursor-pointer">
+            <div
+              className="scroll-indicator w-2 h-2 sm:w-2.5 sm:h-2.5 md:w-3 md:h-3 rounded-full bg-secondary mb-1"
+              aria-hidden="true"
+            />
           </div>
         </a>
       </div>

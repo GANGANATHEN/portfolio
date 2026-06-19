@@ -1,5 +1,5 @@
 "use client";
-import React, { useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import { gsap } from "gsap";
 import { useGSAP } from "@gsap/react";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
@@ -10,6 +10,26 @@ gsap.registerPlugin(ScrollTrigger);
 const Education = () => {
   const containerRef = useRef(null);
 
+  const getScrollDistance = () => {
+    const panels = gsap.utils.toArray(".data-panel");
+
+    // console.log("Panels:", panels.length);
+
+    return `+=${panels.length * 300}`;
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      ScrollTrigger.refresh();
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  // useEffect(() => {
+  //   console.log(getScrollDistance());
+  // }, []);
+
   useGSAP(
     () => {
       // 1. Line Growth Timeline (Syncing Both Lines)
@@ -17,7 +37,7 @@ const Education = () => {
         scrollTrigger: {
           trigger: containerRef.current,
           start: "top 60%",
-          end: "+=2200",
+          end: getScrollDistance,
           scrub: 1.5,
         },
       });
@@ -47,7 +67,7 @@ const Education = () => {
           scrollTrigger: {
             trigger: containerRef.current,
             start: "top 50%",
-            end: "+=2000",
+            end: getScrollDistance,
             scrub: 1.5,
           },
         },

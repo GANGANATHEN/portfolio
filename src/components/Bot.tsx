@@ -100,7 +100,7 @@ const Chatbot = () => {
         <Image
           src={BOT_IMG}
           alt="AI Bot"
-          className="object-contain drop-shadow-2xl w-20 h-20 md:w-28 md:h-28 lg:w-36 lg:h-36"
+          className="object-contain drop-shadow-2xl w-24 h-24 md:w-30 md:h-30 lg:w-36 lg:h-36"
         />
       </div>
 

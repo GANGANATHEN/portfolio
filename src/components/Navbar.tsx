@@ -165,13 +165,13 @@ const Navbar = () => {
           />
 
           <div
-            className={`${!toggle ? "hidden" : "flex"} nav-island-container active-glass p-6 absolute top-20 right-0 mx-4 my-2 min-w-35 z-10 rounded-2xl`}
+            className={`${!toggle ? "hidden" : "flex"} p-6 absolute top-10 right-0 mx-4 my-2 min-w-35 z-10 rounded-xl bg-tertiary shadow-lg border border-white/10`}
           >
             <ul className="list-none flex justify-end items-start flex-col gap-4">
               {navLinks.map((nav) => (
                 <li
                   key={nav.id}
-                  className={`font-poppins font-medium cursor-pointer text-[16px] ${active === nav.title ? "text-white" : "text-secondary"}`}
+                  className={`font-poppins font-medium cursor-pointer hover:text-white text-[16px] ${active === nav.title ? "text-white" : "text-secondary"}`}
                   onClick={() => {
                     setToggle(!toggle);
                     setActive(nav.title);
