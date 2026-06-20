@@ -36,7 +36,7 @@ export default function Home() {
   useEffect(() => {
     const update = () => {
       if (window.innerWidth < 1024) {
-        setExtraHeight(window.innerHeight * 0.32);
+        setExtraHeight(window.innerHeight * 0.4010); // 0.42
       } else {
         setExtraHeight(0);
       }
@@ -70,7 +70,7 @@ export default function Home() {
       <div id="chatbot-section">
         <Contact />
       </div>
-      <div className="h-dvh border-2 border-red-600">demo</div>
+      {/* <div className="h-dvh border-2 border-red-600">demo</div> */}
       {/* <div className="h-dvh border-2 border-red-600">demo</div>
       <div className="h-dvh border-2 border-red-600">demo</div>
       <div className="h-dvh border-2 border-red-600">demo</div>

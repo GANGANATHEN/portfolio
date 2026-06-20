@@ -104,7 +104,7 @@ const Contact = () => {
             </form>
           </div>
 
-          <div className="flex-1 w-full h-full relative border-2 border-amber-400">
+          <div className="flex-1 w-full h-175 relative border-2 border-amber-400">
             <div className="absolute inset-0 bg-linear-to-tr from-cyan-500/20 to-accent/20 blur-[150px] rounded-full animate-pulse" />
             <EarthCanvas />
           </div>
