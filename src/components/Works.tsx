@@ -70,7 +70,7 @@ const Works = () => {
 
       {/* Title area */}
       <div className="px-6 md:px-20 mb-10">
-        <h2 className="text-4xl md:text-6xl font-black text-white">
+        <h2 className="text-3xl sm:text-4xl md:text-6xl font-black text-white">
           Featured Work
         </h2>
       </div>

@@ -79,9 +79,9 @@ const Education = () => {
   return (
     <section
       ref={containerRef}
-      className="edu-section py-20 text-white relative overflow-hidden"
+      className="edu-section py-20 text-white relative overflow-hidden padding"
     >
-      <h2 className="text-center text-5xl font-black mb-20 uppercase tracking-tighter text-transparent bg-clip-text bg-linear-to-r from-cyan-400 to-purple-500">
+      <h2 className="text-centern text-2xl sm:text-3xl lg:text-5xl font-black mb-20 uppercase tracking-tighter text-transparent bg-clip-text bg-linear-to-r from-cyan-400 to-purple-500">
         Educations.
       </h2>
 
@@ -93,20 +93,20 @@ const Education = () => {
           <div className="energy-glow w-full bg-linear-to-b from-cyan-400 to-purple-500 shadow-[0_0_20px_#22d3ee] origin-top" />
         </div>
 
-        <div className="w-full flex flex-col gap-24 px-6 lg:px-0">
+        <div className="w-full lg:w-[85%] xl:w-full flex flex-col gap-24 px-6 lg:px-0">
           {experiences.map((exp, i) => (
             <div
               key={i}
               className={`data-panel relative flex items-center w-full ${i % 2 === 0 ? "lg:justify-start" : "lg:justify-end"}`}
             >
               {/* Connector */}
-              {/* <div
+              <div
                 className="hidden lg:block absolute w-20 h-px bg-cyan-500/50"
                 style={{
                   left: i % 2 === 0 ? "calc(50% + 1px)" : "auto",
                   right: i % 2 !== 0 ? "calc(50% + 1px)" : "auto",
                 }}
-              /> */}
+              />
 
               <div
                 className={`hidden lg:block absolute w-20 h-px bg-cyan-500/50 
@@ -115,12 +115,12 @@ const Education = () => {
               />
 
               {/* Neon Card */}
-              <div className="w-full lg:w-[45%] p-px bg-linear-to-r from-cyan-500/50 to-purple-500/50 rounded-sm">
+              <div className="w-full lg:w-[35%] xl:w-[45%] p-px bg-linear-to-r from-cyan-500/50 to-purple-500/50 rounded-sm">
                 <div className="p-6 bg-[#0b0b15] border-l-4 border-cyan-500 backdrop-blur-md">
                   <div className="text-cyan-400 font-mono text-[10px] uppercase tracking-widest mb-2">
                     Milestone 0{i + 1}
                   </div>
-                  <h3 className="text-xl font-bold">{exp.title}</h3>
+                  <h3 className="text-lg sm:text-xl font-bold">{exp.title}</h3>
                   <p className="text-gray-400 text-sm mt-1">
                     {exp.company_name}
                   </p>

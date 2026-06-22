@@ -31,13 +31,12 @@ const Contact = () => {
     { scope: containerRef },
   );
 
-
   return (
     <>
       <section
         id="contact"
         ref={containerRef}
-        className="relative border-2 border-amber-400 z-10 py-24 px-6 bg-[#020205] h-full"
+        className="relative z-10 py-24 px-6 bg-[#020205] h-full"
       >
         <ParticleBackground />
         <div className="padding flex lg:flex-row flex-col gap-16 items-center">
@@ -104,13 +103,12 @@ const Contact = () => {
             </form>
           </div>
 
-          <div className="flex-1 w-full h-175 relative border-2 border-amber-400">
+          <div className="flex-1 w-full h-175 relative">
             <div className="absolute inset-0 bg-linear-to-tr from-cyan-500/20 to-accent/20 blur-[150px] rounded-full animate-pulse" />
             <EarthCanvas />
           </div>
         </div>
       </section>
-      
     </>
   );
 };
