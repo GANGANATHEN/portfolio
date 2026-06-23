@@ -103,12 +103,17 @@ const ComputersCanvas = () => {
         position: isMobile ? [15, 3, 5] : [20, 3, 5],
         fov: isMobile ? 35 : 25,
       }}
-      gl={{ antialias: true, preserveDrawingBuffer: false }}
+      gl={{
+        antialias: true,
+        preserveDrawingBuffer: false,
+        powerPreference: "high-performance",
+      }}
       onCreated={(state) => {
         state.gl.setClearColor("white", 0);
       }}
       style={{
         cursor: isHovered ? (isDragging ? "grabbing" : "grab") : "auto",
+        background: "transparent",
       }}
     >
       <Suspense fallback={<CanvasLoader />}>
