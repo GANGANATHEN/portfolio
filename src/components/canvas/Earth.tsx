@@ -23,7 +23,7 @@ const Earth = ({ setHovered, isMobile }: EarthProps) => {
       {/* Dynamic scale based on device */}
       <primitive
         object={scene}
-        scale={isMobile ? 5.4 : 2.5}
+        scale={isMobile ? 3.4 : 2.5}
         position={[0, 0, 0]}
         rotation={[0, 0, 0]}
       />
@@ -57,12 +57,13 @@ const EarthCanvas = () => {
       camera={{
         fov: isMobile ? 55 : 45, // Wider FOV for mobile
         near: 0.1,
-        far: 200,
+        far: 1000,
         position: isMobile ? [-6, 3, 8] : [-4, 3, 6], // Adjust camera distance
       }}
       style={{
         width: "100%",
         height: "100%",
+        overflow:"visible",
         cursor: isHovered ? (isDragging ? "grabbing" : "grab") : "auto",
       }}
     >
@@ -72,11 +73,11 @@ const EarthCanvas = () => {
           enableZoom={false}
           maxPolarAngle={Math.PI / 2}
           minPolarAngle={Math.PI / 2}
-          enableRotate={isHovered || isDragging}
+          enableRotate={true}
+          // enableRotate={isHovered || isDragging}
           onStart={() => setIsDragging(true)}
           onEnd={() => setIsDragging(false)}
         />
-        {/* <OrbitControls enabled={false} /> */}
         <Earth setHovered={setIsHovered} isMobile={isMobile} />
         <Preload all />
       </Suspense>

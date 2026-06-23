@@ -39,7 +39,7 @@ const Contact = () => {
         className="relative z-10 py-24 px-6 bg-[#020205] h-full"
       >
         <ParticleBackground />
-        <div className="padding flex lg:flex-row flex-col gap-16 items-center">
+        <div className="padding flex lg:flex-row flex-col-reverse gap-16 items-center">
           <div className="contact-card flex-[0.6] w-full h-full bg-black-100/50 backdrop-blur-xl border border-white/5 p-8 md:p-12 rounded-4xl shadow-2xl relative overflow-hidden">
             Status Overlay
             {state.succeeded && (
@@ -103,7 +103,7 @@ const Contact = () => {
             </form>
           </div>
 
-          <div className="flex-1 w-full h-175 relative">
+          <div className="lg:flex-1 w-full h-50 sm:h-125 md:h-120 xl:h-150 2xl:h-175 relative overflow-visible">
             <div className="absolute inset-0 bg-linear-to-tr from-cyan-500/20 to-accent/20 blur-[150px] rounded-full animate-pulse" />
             <EarthCanvas />
           </div>

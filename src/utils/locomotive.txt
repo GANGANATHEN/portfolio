@@ -1,0 +1,59 @@
+"use client";
+import { useEffect } from "react";
+import LocomotiveScroll from "locomotive-scroll";
+import { gsap } from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+
+// Plugin-ai register pannuvom
+gsap.registerPlugin(ScrollTrigger);
+
+export function useLocomotiveScroll() {
+  useEffect(() => {
+    // 1. Container-ai select pannuvom
+    const container = document.querySelector("[data-scroll-container]") as HTMLElement;
+    
+    if (!container) return;
+
+    // 2. Locomotive Init
+    const locoScroll = new LocomotiveScroll({
+      el: container,
+      smooth: true,
+      // Mobile-la native scrolling-e safe
+      smartphone: { smooth: false },
+      tablet: { smooth: false },
+    });
+
+    // 3. ScrollTrigger-ai Locomotive-oda sync pannuvom
+    locoScroll.on("scroll", () => {
+      ScrollTrigger.update();
+    });
+
+    // 4. ScrollTrigger Proxy - Ithu thaan GSAP-kku unga smooth scroll position-ai puriya vaikkum
+    ScrollTrigger.scrollerProxy(container, {
+      scrollTop(value) {
+        return arguments.length 
+          ? locoScroll.scrollTo(value, { duration: 0, disableLerp: true }) 
+          : (locoScroll as any).scroll.instance.scroll.y; // instance.scroll.y path correct-a check pannunga
+      },
+      getBoundingClientRect() {
+        return { 
+          top: 0, 
+          left: 0, 
+          width: window.innerWidth, 
+          height: window.innerHeight 
+        };
+      },
+      // Fixed element-gal scroll aagum pothu translate aaga ithu mukkiyam
+      pinType: container.style.transform ? "transform" : "fixed"
+    });
+
+    // 5. Refresh logic
+    ScrollTrigger.addEventListener("refresh", () => locoScroll.update());
+    ScrollTrigger.refresh();
+
+    // Cleanup
+    return () => {
+      if (locoScroll) locoScroll.destroy();
+    };
+  }, []);
+}

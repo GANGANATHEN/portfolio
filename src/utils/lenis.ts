@@ -14,10 +14,8 @@ export function useLenisScroll() {
       ("ontouchstart" in window || navigator.maxTouchPoints > 0);
 
     // 2. Optimized Lenis Configuration
-    // duration 1.2 is the sweet spot for smooth vs snappy
     const lenis = new Lenis({
       smoothWheel: true,
-      smoothTouch: isTouch,
       syncTouch: isTouch,
       
       // lerp 0.1 is responsive, 0.05 is floaty. 
