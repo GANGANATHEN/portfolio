@@ -13,7 +13,7 @@ import { ComputersCanvas } from "./canvas";
 const Hero = () => {
   const container = useRef<HTMLElement>(null);
   const [isMounted, setIsMounted] = useState(false);
-  const name = "demo";
+  const name = "Ganganathan";
 
   useGSAP(
     () => {
