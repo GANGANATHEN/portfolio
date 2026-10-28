@@ -81,8 +81,8 @@ const Education = () => {
       ref={containerRef}
       className="edu-section py-20 text-white relative overflow-hidden padding"
     >
-      <h2 className="text-centern text-2xl sm:text-3xl lg:text-5xl font-black mb-20 uppercase tracking-tighter text-transparent bg-clip-text bg-linear-to-r from-cyan-400 to-purple-500">
-        Educations.
+      <h2 className="text-center text-2xl sm:text-3xl lg:text-5xl font-black mb-20 uppercase tracking-tighter text-transparent bg-clip-text bg-linear-to-r from-cyan-400 to-purple-500">
+        Education & Experience.
       </h2>
 
       <div className="relative max-w-5xl mx-auto flex flex-col items-center">
@@ -108,12 +108,6 @@ const Education = () => {
                 }}
               />
 
-              <div
-                className={`hidden lg:block absolute w-20 h-px bg-cyan-500/50 
-                ${i % 2 === 0 ? "left-[calc(50%+1px)]" : "right-[calc(50%+1px)]"}
-                `}
-              />
-
               {/* Neon Card */}
               <div className="w-full lg:w-[35%] xl:w-[45%] p-px bg-linear-to-r from-cyan-500/50 to-purple-500/50 rounded-sm">
                 <div className="p-6 bg-[#0b0b15] border-l-4 border-cyan-500 backdrop-blur-md">
@@ -126,7 +120,7 @@ const Education = () => {
                   </p>
                   <div className="mt-4 pt-4 border-t border-white/10 flex justify-between font-mono text-[11px] text-purple-300">
                     <span>{exp.date}</span>
-                    <span>9.1 CGPA</span>
+                    <span>{"score" in exp ? String(exp.score) : "Verified"}</span>
                   </div>
                 </div>
               </div>

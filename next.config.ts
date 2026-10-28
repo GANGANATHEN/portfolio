@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig & { allowedDevOrigins?: string[]; eslint?: { ignoreDuringBuilds?: boolean } } = {
+const nextConfig: NextConfig = {
   reactCompiler: true,
   allowedDevOrigins: ["10.20.120.107"],
   images: {
@@ -12,12 +12,6 @@ const nextConfig: NextConfig & { allowedDevOrigins?: string[]; eslint?: { ignore
         pathname: "/api/portraits/**",
       },
     ],
-  },
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-  eslint: {
-    ignoreDuringBuilds: true,
   },
 };
 

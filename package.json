@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node --test tests/security.test.mjs",
+    "test:e2e": "node tests/live-e2e.mjs"
   },
   "dependencies": {
     "@formspree/react": "^3.0.0",

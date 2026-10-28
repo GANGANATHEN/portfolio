@@ -109,13 +109,29 @@ const Works = () => {
                 <h3 className="text-2xl md:text-3xl font-bold text-white mb-2">
                   {project.name}
                 </h3>
-                <p className="text-gray-400 text-sm mb-6 line-clamp-3">
+                <p className="text-gray-300 text-xs sm:text-sm mb-4 line-clamp-2 sm:line-clamp-3">
                   {project.description}
                 </p>
+
+                {/* Tech Badges */}
+                {project.tags && project.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {project.tags.map((tag) => (
+                      <span
+                        key={tag.name}
+                        className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-white/10 text-cyan-300 border border-white/5"
+                      >
+                        #{tag.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
                 <a
                   href={project.url}
                   target="_blank"
-                  className="inline-flex items-center gap-2 text-sm font-semibold text-white hover:text-cyan-400"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-sm font-semibold text-white hover:text-cyan-400 transition-colors"
                 >
                   View Project →
                 </a>

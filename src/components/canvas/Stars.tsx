@@ -3,15 +3,16 @@ import { useState, useRef, Suspense } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Points, PointMaterial, Preload } from "@react-three/drei";
 import * as random from "maath/random";
+import type * as THREE from "three";
 
-const Stars = (props: any) => {
-  const ref = useRef<any>();
+const Stars = (props: React.ComponentPropsWithoutRef<typeof Points>) => {
+  const ref = useRef<THREE.Points>(null);
   // Initial stars sphere setup
   const [sphere] = useState(() => 
-    random.inSphere(new Float32Array(5000), { radius: 1.2 })
+    random.inSphere(new Float32Array(5000), { radius: 1.2 }) as Float32Array
   );
 
-  useFrame((state, delta) => {
+  useFrame((_state, delta) => {
     if (ref.current) {
       ref.current.rotation.x -= delta / 10;
       ref.current.rotation.y -= delta / 15;

@@ -41,7 +41,7 @@ const Contact = () => {
         <ParticleBackground />
         <div className="padding flex lg:flex-row flex-col-reverse gap-16 items-center">
           <div className="contact-card flex-[0.6] w-full h-full bg-black-100/50 backdrop-blur-xl border border-white/5 p-8 md:p-12 rounded-4xl shadow-2xl relative overflow-hidden">
-            Status Overlay
+            {/* Status Overlay */}
             {state.succeeded && (
               <div className="absolute inset-0 z-20 bg-black-100/90 backdrop-blur-md flex flex-col items-center justify-center">
                 <div className="w-16 h-16 bg-cyan-500/20 rounded-full flex items-center justify-center mb-6 animate-pulse">
@@ -64,28 +64,43 @@ const Contact = () => {
             </h3>
             <form onSubmit={handleSubmit} className="flex flex-col gap-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <input
-                  type="text"
-                  name="name"
+                <div>
+                  <label htmlFor="contact-name" className="sr-only">Your Name</label>
+                  <input
+                    id="contact-name"
+                    type="text"
+                    name="name"
+                    required
+                    placeholder="Name"
+                    aria-label="Your Name"
+                    className="w-full bg-tertiary p-4 rounded-xl text-white border border-transparent focus:border-cyan-400 outline-none transition-all"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="contact-email" className="sr-only">Your Email</label>
+                  <input
+                    id="contact-email"
+                    type="email"
+                    name="email"
+                    required
+                    placeholder="Email"
+                    aria-label="Your Email"
+                    className="w-full bg-tertiary p-4 rounded-xl text-white border border-transparent focus:border-cyan-400 outline-none transition-all"
+                  />
+                </div>
+              </div>
+              <div>
+                <label htmlFor="contact-message" className="sr-only">Your Message</label>
+                <textarea
+                  id="contact-message"
+                  name="message"
                   required
-                  placeholder="Name"
-                  className="bg-tertiary p-4 rounded-xl text-white border border-transparent focus:border-cyan-400 outline-none transition-all"
-                />
-                <input
-                  type="email"
-                  name="email"
-                  required
-                  placeholder="Email"
-                  className="bg-tertiary p-4 rounded-xl text-white border border-transparent focus:border-cyan-400 outline-none transition-all"
+                  placeholder="Your message..."
+                  aria-label="Your Message"
+                  rows={5}
+                  className="bg-tertiary p-4 rounded-xl text-white border border-transparent focus:border-cyan-400 outline-none transition-all w-full"
                 />
               </div>
-              <textarea
-                name="message"
-                required
-                placeholder="Your message..."
-                rows={5}
-                className="bg-tertiary p-4 rounded-xl text-white border border-transparent focus:border-cyan-400 outline-none transition-all w-full"
-              />
 
               {state.errors && (
                 <p className="text-red-400 text-sm">

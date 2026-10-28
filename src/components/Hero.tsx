@@ -13,7 +13,7 @@ import { ComputersCanvas } from "./canvas";
 const Hero = () => {
   const container = useRef<HTMLElement>(null);
   const [isMounted, setIsMounted] = useState(false);
-  const name = "demo";
+  const name = "Ganganathan";
 
   useGSAP(
     () => {
@@ -94,7 +94,7 @@ const Hero = () => {
         <ComputersCanvas />
       </div>
 
-      <div className="absolute left-1/2 -translate-x-1/2 bottom-0 flex justify-center items-center z-20 pointer-events-none">
+      <div className="absolute left-1/2 -translate-x-1/2 bottom-4 sm:bottom-6 md:bottom-8 flex justify-center items-center z-20 pointer-events-none">
         <a
           href="#about"
           className="pointer-events-auto"

@@ -129,8 +129,8 @@ const Navbar = () => {
             className="object-contain"
           />
           <p className="text-white text-[18px] font-extrabold tracking-wide cursor-pointer flex">
-            demo{" "}
-            <span className="sm:block hidden text-indigo-500 ml-2">. DEV</span>
+            GANGANATHAN{" "}
+            <span className="sm:block hidden text-accent ml-2">. DEV</span>
           </p>
         </Link>
 
@@ -155,29 +155,38 @@ const Navbar = () => {
 
         {/* Mobile Menu */}
         <div className="sm:hidden flex flex-1 justify-end items-center nav-item">
-          <Image
-            src={toggle ? close : menu}
-            alt="menu"
-            width={28}
-            height={28}
-            className="object-contain cursor-pointer"
+          <button
+            type="button"
+            aria-label="Toggle Navigation Menu"
+            aria-expanded={toggle}
+            className="p-2 cursor-pointer focus:outline-none"
             onClick={() => setToggle(!toggle)}
-          />
+          >
+            <Image
+              src={toggle ? close : menu}
+              alt="menu"
+              width={28}
+              height={28}
+              className="object-contain"
+            />
+          </button>
 
           <div
-            className={`${!toggle ? "hidden" : "flex"} p-6 absolute top-10 right-0 mx-4 my-2 min-w-35 z-10 rounded-xl bg-tertiary shadow-lg border border-white/10`}
+            className={`${!toggle ? "hidden" : "flex"} p-6 absolute top-16 right-0 mx-4 my-2 min-w-44 z-50 rounded-2xl bg-[#0a0a0c]/95 backdrop-blur-xl shadow-2xl border border-white/10`}
           >
-            <ul className="list-none flex justify-end items-start flex-col gap-4">
+            <ul className="list-none flex justify-end items-start flex-col gap-4 w-full">
               {navLinks.map((nav) => (
                 <li
                   key={nav.id}
-                  className={`font-poppins font-medium cursor-pointer hover:text-white text-[16px] ${active === nav.title ? "text-white" : "text-secondary"}`}
+                  className={`w-full font-poppins font-medium cursor-pointer hover:text-white text-[16px] py-1 ${active === nav.title ? "text-cyan-400 font-bold" : "text-secondary"}`}
                   onClick={() => {
-                    setToggle(!toggle);
+                    setToggle(false);
                     setActive(nav.title);
                   }}
                 >
-                  <a href={`#${nav.id}`}>{nav.title}</a>
+                  <a href={`#${nav.id}`} className="block w-full">
+                    {nav.title}
+                  </a>
                 </li>
               ))}
             </ul>

@@ -64,11 +64,20 @@ export const technologies = [
 
 export const experiences = [
   {
+    title: "B.E. Computer Science & Engineering",
+    company_name: "P.S.R Engineering College, Sivakasi",
+    icon: uomcodl,
+    iconBg: "#F0F8FF",
+    date: "2020 - 2024",
+    score: "9.1 CGPA",
+  },
+  {
     title: "Web Design for Beginners",
     company_name: "University of Moratuwa",
     icon: uomcodl,
     iconBg: "#F0F8FF",
     date: "Web Design Course",
+    score: "Certified",
   },
   {
     title: "JavaScript Essentials 1",
@@ -76,6 +85,7 @@ export const experiences = [
     icon: cisco,
     iconBg: "#F0F8FF",
     date: "CISCO JS Course",
+    score: "Certified",
   },
   {
     title: "Front End Web Development",
@@ -83,13 +93,15 @@ export const experiences = [
     icon: devtown,
     iconBg: "#F0F8FF",
     date: "Bootcamp",
+    score: "Graduate",
   },
   {
-    title: "Web Developement",
+    title: "Web Development",
     company_name: "Eminent",
     icon: eminent,
     iconBg: "#F0F8FF",
     date: "Internship Training",
+    score: "Completed",
   },
   {
     title: "Data Science Certificate",
@@ -97,6 +109,7 @@ export const experiences = [
     icon: ibm,
     iconBg: "#F0F8FF",
     date: "Data Science",
+    score: "IBM Credential",
   },
   {
     title: "Cloud Architecting",
@@ -104,6 +117,7 @@ export const experiences = [
     icon: aws,
     iconBg: "#F0F8FF",
     date: "Cloud Architecting",
+    score: "AWS Certified",
   },
   {
     title: "RedHat Training",
@@ -111,38 +125,39 @@ export const experiences = [
     icon: redhat,
     iconBg: "#F0F8FF",
     date: "RedHat",
+    score: "Certified",
   },
 ];
 
 export const testimonials = [
   {
+    id: 1,
+    name: "Alex Rivera",
     testimonial:
-      "Do not follow where the path may lead. Go instead where there is no path and leave a trail.",
-    name: "Waldo Emerson",
-    designation: "Essayist",
-    company: "An American",
-    image: "https://randomuser.me/api/portraits/men/45.jpg",
+      "Ganganathan is an exceptional frontend developer. His 3D integrations and attention to responsive micro-interactions are top tier.",
+    created_at: "2024-06-12T10:00:00Z",
   },
   {
+    id: 2,
+    name: "Priya Sharma",
     testimonial:
-      "I start with the premise that the function of leadership is to produce more leaders, not more followers.",
-    name: "Ralph Nader",
-    designation: "Author",
-    company: "An American",
-    image: "https://randomuser.me/api/portraits/men/5.jpg",
+      "The performance and smooth animations across mobile and desktop are stunning. Highly recommended full-stack engineer!",
+    created_at: "2024-06-14T14:30:00Z",
   },
   {
-    testimonial: "Everything you’ve ever wanted is on the other side of fear.",
-    name: "George Addair",
-    designation: "Real-estate developer",
-    company: "post Civil War Atlanta",
-    image: "https://randomuser.me/api/portraits/men/6.jpg",
+    id: 3,
+    name: "Michael Chen",
+    testimonial:
+      "Working with Ganganathan on complex React and Three.js components was a seamless experience. Fast turnaround and clean code.",
+    created_at: "2024-06-16T09:15:00Z",
   },
 ];
 
 export const projects = [
   {
     name: "iPhone 15 Pro",
+    description:
+      "Interactive 3D Apple iPhone 15 Pro showcase website featuring realistic Three.js models, GSAP animations, and dynamic color styling.",
     tags: [
       {
         name: "React",
@@ -167,6 +182,8 @@ export const projects = [
   },
   {
     name: "Calculator",
+    description:
+      "Responsive web calculator with smooth mathematical expression evaluation, clean UI, and keyboard navigation.",
     tags: [
       {
         name: "HTML",
@@ -187,6 +204,8 @@ export const projects = [
   },
   {
     name: "Portfolio",
+    description:
+      "Interactive personal 3D developer portfolio showcasing full-stack skills, dynamic models, and responsive modern layouts.",
     tags: [
       {
         name: "React",
@@ -203,10 +222,12 @@ export const projects = [
     ],
     image: ganganathan,
     source_code_link: "https://github.com/GREENGANGA/ReactJs-Portfolio",
-    url: "ganganathan.netlify.app/",
+    url: "https://ganganathan.netlify.app",
   },
   {
     name: "Social Link",
+    description:
+      "Sleek social links aggregator profile page featuring responsive layout design and hover animations.",
     tags: [
       {
         name: "React",
@@ -224,6 +245,8 @@ export const projects = [
   },
   {
     name: "Qr code",
+    description:
+      "Clean QR code scanning & generator component with adaptive mobile layout and SVG rendering.",
     tags: [
       {
         name: "Reactjs",
@@ -236,10 +259,12 @@ export const projects = [
     ],
     image: qrcode,
     source_code_link: "https://github.com/GREENGANGA/qr-code-component-main",
-    url: " https://ganganathan-qr-code-componant.netlify.app/",
+    url: "https://ganganathan-qr-code-componant.netlify.app/",
   },
   {
     name: "score board",
+    description:
+      "Live cricket match score board tracker with real-time run tallying, wickets tracking, and over-by-over analysis.",
     tags: [
       {
         name: "HTML",
@@ -260,6 +285,8 @@ export const projects = [
   },
   {
     name: "Grade Calculator",
+    description:
+      "Academic GPA and semester grade calculation application with instant score weighting and breakdown.",
     tags: [
       {
         name: "HTML",
