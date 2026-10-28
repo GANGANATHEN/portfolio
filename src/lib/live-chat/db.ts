@@ -1,23 +1,92 @@
 import type { Conversation, ChatMessage, NotificationLog } from "./types";
-import { supabase } from "../supabase";
+import { getServerSupabase } from "../supabase";
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
 
-// Fallback in-memory store for development/preview or before Supabase table migration
-const memoryConversations = new Map<string, Conversation>(); // keyed by id
-const memoryHashToId = new Map<string, string>(); // sessionTokenHash -> conversationId
-const memoryMessages = new Map<string, ChatMessage[]>(); // conversationId -> messages[]
-const memoryNotificationLogs: NotificationLog[] = [];
+// Durable local storage path for persistent offline & dev execution
+const DATA_DIR = path.join(process.cwd(), ".data");
+const STORE_FILE = path.join(DATA_DIR, "live-chat-store.json");
 
-// Track if Supabase tables are ready
+interface PersistentStore {
+  conversations: Record<string, Conversation>; // id -> Conversation
+  hashToId: Record<string, string>; // sessionTokenHash -> conversationId
+  messages: Record<string, ChatMessage[]>; // conversationId -> ChatMessage[]
+  notificationLogs: NotificationLog[];
+}
+
+// In-memory cache synced with disk
+let localStore: PersistentStore = {
+  conversations: {},
+  hashToId: {},
+  messages: {},
+  notificationLogs: [],
+};
+
+// Simple in-process mutex to prevent concurrent write races in node
+let storeMutex = Promise.resolve();
+function runWithLock<T>(fn: () => Promise<T> | T): Promise<T> {
+  const next = storeMutex.then(fn);
+  storeMutex = next.then(() => {}).catch(() => {});
+  return next;
+}
+
+// Load durable store from disk on startup
+function initDurableStore(): void {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    if (fs.existsSync(STORE_FILE)) {
+      const content = fs.readFileSync(STORE_FILE, "utf-8");
+      const parsed = JSON.parse(content);
+      if (parsed && typeof parsed === "object") {
+        localStore = {
+          conversations: parsed.conversations || {},
+          hashToId: parsed.hashToId || {},
+          messages: parsed.messages || {},
+          notificationLogs: parsed.notificationLogs || [],
+        };
+      }
+    }
+  } catch (err) {
+    console.warn("[Live Chat DB] Could not read local persistent store:", err);
+  }
+}
+initDurableStore();
+
+function persistStoreToDisk(): void {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    const tempFile = `${STORE_FILE}.tmp.${Date.now()}`;
+    fs.writeFileSync(tempFile, JSON.stringify(localStore, null, 2), "utf-8");
+    fs.renameSync(tempFile, STORE_FILE);
+  } catch (err) {
+    console.warn("[Live Chat DB] Could not write local persistent store to disk:", err);
+  }
+}
+
+// Track Supabase table status
 let supabaseTablesAvailable: boolean | null = null;
+let lastSupabaseCheckTime = 0;
 
 async function checkSupabaseAvailable(): Promise<boolean> {
-  if (supabaseTablesAvailable !== null) return supabaseTablesAvailable;
+  const now = Date.now();
+  // Cache positive check, or retry negative checks after 15 seconds
+  if (supabaseTablesAvailable === true) return true;
+  if (supabaseTablesAvailable === false && now - lastSupabaseCheckTime < 15000) {
+    return false;
+  }
+
+  lastSupabaseCheckTime = now;
   try {
-    const { error } = await supabase.from("chat_conversations").select("id").limit(1);
+    const serverClient = getServerSupabase();
+    const { error } = await serverClient.from("chat_conversations").select("id").limit(1);
     supabaseTablesAvailable = !error;
     if (error) {
-      console.warn("[Live Chat DB] Supabase table 'chat_conversations' not accessible yet. Using resilient storage adapter. Error:", error.message);
+      console.warn("[Live Chat DB] Supabase table 'chat_conversations' not ready. Using durable storage adapter. Error:", error.message);
     } else {
       console.log("[Live Chat DB] Supabase connected successfully for Live Chat.");
     }
@@ -35,7 +104,8 @@ export async function getOrCreateConversationByHash(
 
   if (isSupabaseReady) {
     try {
-      const { data, error } = await supabase
+      const serverClient = getServerSupabase();
+      const { data, error } = await serverClient
         .from("chat_conversations")
         .select("*")
         .eq("session_token_hash", sessionTokenHash)
@@ -58,9 +128,10 @@ export async function getOrCreateConversationByHash(
         };
       }
 
-      // Create new in Supabase
+      // Insert new conversation
+      const newId = crypto.randomUUID();
       const newConv = {
-        id: crypto.randomUUID(),
+        id: newId,
         session_token_hash: sessionTokenHash,
         visitor_name: defaultName,
         email_notifications_enabled: false,
@@ -69,7 +140,7 @@ export async function getOrCreateConversationByHash(
         last_message_at: new Date().toISOString(),
       };
 
-      const { data: inserted, error: insertError } = await supabase
+      const { data: inserted, error: insertError } = await serverClient
         .from("chat_conversations")
         .insert([newConv])
         .select()
@@ -92,37 +163,41 @@ export async function getOrCreateConversationByHash(
         };
       }
     } catch (e) {
-      console.warn("[Live Chat DB] Error creating conversation in Supabase, falling back to memory:", e);
+      console.warn("[Live Chat DB] Error creating conversation in Supabase, using durable storage:", e);
     }
   }
 
-  // Memory fallback
-  const existingId = memoryHashToId.get(sessionTokenHash);
-  if (existingId && memoryConversations.has(existingId)) {
-    return memoryConversations.get(existingId)!;
-  }
+  // Durable store fallback
+  return runWithLock(() => {
+    const existingId = localStore.hashToId[sessionTokenHash];
+    if (existingId && localStore.conversations[existingId]) {
+      return localStore.conversations[existingId];
+    }
 
-  const newId = crypto.randomUUID();
-  const now = new Date().toISOString();
-  const conv: Conversation = {
-    id: newId,
-    sessionTokenHash,
-    visitorName: defaultName,
-    visitorEmail: null,
-    emailNotificationsEnabled: false,
-    createdAt: now,
-    updatedAt: now,
-    lastMessageAt: now,
-    unreadOwnerCount: 0,
-    unreadVisitorCount: 0,
-    lastOwnerNotificationAt: null,
-    lastVisitorNotificationAt: null,
-  };
+    const newId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const conv: Conversation = {
+      id: newId,
+      sessionTokenHash,
+      visitorName: defaultName,
+      visitorEmail: null,
+      emailNotificationsEnabled: false,
+      createdAt: now,
+      updatedAt: now,
+      lastMessageAt: now,
+      unreadOwnerCount: 0,
+      unreadVisitorCount: 0,
+      lastOwnerNotificationAt: null,
+      lastVisitorNotificationAt: null,
+    };
 
-  memoryConversations.set(newId, conv);
-  memoryHashToId.set(sessionTokenHash, newId);
-  memoryMessages.set(newId, []);
-  return conv;
+    localStore.conversations[newId] = conv;
+    localStore.hashToId[sessionTokenHash] = newId;
+    localStore.messages[newId] = [];
+    persistStoreToDisk();
+
+    return conv;
+  });
 }
 
 export async function getConversationByHash(sessionTokenHash: string): Promise<Conversation | null> {
@@ -130,7 +205,8 @@ export async function getConversationByHash(sessionTokenHash: string): Promise<C
 
   if (isSupabaseReady) {
     try {
-      const { data, error } = await supabase
+      const serverClient = getServerSupabase();
+      const { data, error } = await serverClient
         .from("chat_conversations")
         .select("*")
         .eq("session_token_hash", sessionTokenHash)
@@ -153,15 +229,12 @@ export async function getConversationByHash(sessionTokenHash: string): Promise<C
         };
       }
     } catch {
-      // Fallback to memory
+      // Fallback
     }
   }
 
-  const id = memoryHashToId.get(sessionTokenHash);
-  if (id && memoryConversations.has(id)) {
-    return memoryConversations.get(id)!;
-  }
-  return null;
+  const id = localStore.hashToId[sessionTokenHash];
+  return (id && localStore.conversations[id]) || null;
 }
 
 export async function getConversationById(id: string): Promise<Conversation | null> {
@@ -169,7 +242,8 @@ export async function getConversationById(id: string): Promise<Conversation | nu
 
   if (isSupabaseReady) {
     try {
-      const { data, error } = await supabase
+      const serverClient = getServerSupabase();
+      const { data, error } = await serverClient
         .from("chat_conversations")
         .select("*")
         .eq("id", id)
@@ -192,11 +266,11 @@ export async function getConversationById(id: string): Promise<Conversation | nu
         };
       }
     } catch {
-      // Fallback to memory
+      // Fallback
     }
   }
 
-  return memoryConversations.get(id) || null;
+  return localStore.conversations[id] || null;
 }
 
 export async function updateConversationProfile(
@@ -214,7 +288,8 @@ export async function updateConversationProfile(
   const isSupabaseReady = await checkSupabaseAvailable();
   if (isSupabaseReady) {
     try {
-      await supabase
+      const serverClient = getServerSupabase();
+      await serverClient
         .from("chat_conversations")
         .update({
           visitor_name: updatedName,
@@ -228,14 +303,16 @@ export async function updateConversationProfile(
     }
   }
 
-  // Update memory store
-  conv.visitorName = updatedName;
-  conv.visitorEmail = updatedEmail;
-  conv.emailNotificationsEnabled = updatedNotify;
-  conv.updatedAt = now;
-  memoryConversations.set(conv.id, conv);
-
-  return conv;
+  // Update local durable store
+  return runWithLock(() => {
+    conv.visitorName = updatedName;
+    conv.visitorEmail = updatedEmail;
+    conv.emailNotificationsEnabled = updatedNotify;
+    conv.updatedAt = now;
+    localStore.conversations[conv.id] = conv;
+    persistStoreToDisk();
+    return conv;
+  });
 }
 
 export async function getMessages(conversationId: string): Promise<ChatMessage[]> {
@@ -243,7 +320,8 @@ export async function getMessages(conversationId: string): Promise<ChatMessage[]
 
   if (isSupabaseReady) {
     try {
-      const { data, error } = await supabase
+      const serverClient = getServerSupabase();
+      const { data, error } = await serverClient
         .from("chat_messages")
         .select("*")
         .eq("conversation_id", conversationId)
@@ -260,11 +338,11 @@ export async function getMessages(conversationId: string): Promise<ChatMessage[]
         }));
       }
     } catch {
-      // Fallback to memory
+      // Fallback
     }
   }
 
-  return memoryMessages.get(conversationId) || [];
+  return localStore.messages[conversationId] || [];
 }
 
 export async function addMessage({
@@ -289,7 +367,8 @@ export async function addMessage({
   const isSupabaseReady = await checkSupabaseAvailable();
   if (isSupabaseReady) {
     try {
-      await supabase.from("chat_messages").insert([
+      const serverClient = getServerSupabase();
+      await serverClient.from("chat_messages").insert([
         {
           id: message.id,
           conversation_id: conversationId,
@@ -299,7 +378,6 @@ export async function addMessage({
         },
       ]);
 
-      // Increment unread count & update last_message_at
       const conv = await getConversationById(conversationId);
       if (conv) {
         const updateData: Record<string, unknown> = {
@@ -312,31 +390,34 @@ export async function addMessage({
           updateData.unread_visitor_count = (conv.unreadVisitorCount || 0) + 1;
         }
 
-        await supabase.from("chat_conversations").update(updateData).eq("id", conversationId);
+        await serverClient.from("chat_conversations").update(updateData).eq("id", conversationId);
       }
     } catch (e) {
       console.warn("[Live Chat DB] Error adding message to Supabase:", e);
     }
   }
 
-  // Memory store
-  const list = memoryMessages.get(conversationId) || [];
-  list.push(message);
-  memoryMessages.set(conversationId, list);
+  // Update local durable store
+  return runWithLock(() => {
+    const list = localStore.messages[conversationId] || [];
+    list.push(message);
+    localStore.messages[conversationId] = list;
 
-  const conv = memoryConversations.get(conversationId);
-  if (conv) {
-    conv.lastMessageAt = now;
-    conv.updatedAt = now;
-    if (senderType === "visitor") {
-      conv.unreadOwnerCount = (conv.unreadOwnerCount || 0) + 1;
-    } else {
-      conv.unreadVisitorCount = (conv.unreadVisitorCount || 0) + 1;
+    const conv = localStore.conversations[conversationId];
+    if (conv) {
+      conv.lastMessageAt = now;
+      conv.updatedAt = now;
+      if (senderType === "visitor") {
+        conv.unreadOwnerCount = (conv.unreadOwnerCount || 0) + 1;
+      } else {
+        conv.unreadVisitorCount = (conv.unreadVisitorCount || 0) + 1;
+      }
+      localStore.conversations[conversationId] = conv;
     }
-    memoryConversations.set(conversationId, conv);
-  }
+    persistStoreToDisk();
 
-  return message;
+    return message;
+  });
 }
 
 export async function markMessagesAsRead(
@@ -348,9 +429,9 @@ export async function markMessagesAsRead(
 
   if (isSupabaseReady) {
     try {
-      // Mark opposite sender messages as read
+      const serverClient = getServerSupabase();
       const oppositeSender = readerType === "owner" ? "visitor" : "owner";
-      await supabase
+      await serverClient
         .from("chat_messages")
         .update({ read_at: now })
         .eq("conversation_id", conversationId)
@@ -360,24 +441,27 @@ export async function markMessagesAsRead(
       const updateData =
         readerType === "owner" ? { unread_owner_count: 0 } : { unread_visitor_count: 0 };
 
-      await supabase.from("chat_conversations").update(updateData).eq("id", conversationId);
+      await serverClient.from("chat_conversations").update(updateData).eq("id", conversationId);
     } catch (e) {
       console.warn("[Live Chat DB] Error marking read in Supabase:", e);
     }
   }
 
-  // Update memory
-  const msgs = memoryMessages.get(conversationId) || [];
-  msgs.forEach((m) => {
-    if (readerType === "owner" && m.senderType === "visitor") m.readAt = now;
-    if (readerType === "visitor" && m.senderType === "owner") m.readAt = now;
-  });
+  runWithLock(() => {
+    const msgs = localStore.messages[conversationId] || [];
+    msgs.forEach((m) => {
+      if (readerType === "owner" && m.senderType === "visitor") m.readAt = now;
+      if (readerType === "visitor" && m.senderType === "owner") m.readAt = now;
+    });
 
-  const conv = memoryConversations.get(conversationId);
-  if (conv) {
-    if (readerType === "owner") conv.unreadOwnerCount = 0;
-    if (readerType === "visitor") conv.unreadVisitorCount = 0;
-  }
+    const conv = localStore.conversations[conversationId];
+    if (conv) {
+      if (readerType === "owner") conv.unreadOwnerCount = 0;
+      if (readerType === "visitor") conv.unreadVisitorCount = 0;
+      localStore.conversations[conversationId] = conv;
+    }
+    persistStoreToDisk();
+  });
 }
 
 export async function getAllConversationsForAdmin(): Promise<
@@ -387,7 +471,8 @@ export async function getAllConversationsForAdmin(): Promise<
 
   if (isSupabaseReady) {
     try {
-      const { data, error } = await supabase
+      const serverClient = getServerSupabase();
+      const { data, error } = await serverClient
         .from("chat_conversations")
         .select("*, chat_messages(content, created_at)")
         .order("last_message_at", { ascending: false });
@@ -416,13 +501,13 @@ export async function getAllConversationsForAdmin(): Promise<
         });
       }
     } catch {
-      // Fallback to memory
+      // Fallback
     }
   }
 
   const list: (Conversation & { latestMessage?: string })[] = [];
-  for (const conv of memoryConversations.values()) {
-    const msgs = memoryMessages.get(conv.id) || [];
+  for (const conv of Object.values(localStore.conversations)) {
+    const msgs = localStore.messages[conv.id] || [];
     const latest = msgs[msgs.length - 1]?.content || "No messages yet";
     list.push({ ...conv, latestMessage: latest });
   }
@@ -432,31 +517,72 @@ export async function getAllConversationsForAdmin(): Promise<
   );
 }
 
-export async function updateNotificationTimestamp(
+/**
+ * Concurrency-Safe Atomic Notification Lock Claim
+ * Evaluates cooldown independently per conversation.
+ * If lock is granted, sets timestamp to NOW and returns true.
+ * If cooldown is still active, returns false.
+ */
+export async function claimNotificationLock(
   conversationId: string,
   recipientType: "owner" | "visitor",
-): Promise<void> {
-  const now = new Date().toISOString();
-  const isSupabaseReady = await checkSupabaseAvailable();
+  cooldownMs: number,
+): Promise<boolean> {
+  const now = new Date();
+  const thresholdIso = new Date(now.getTime() - cooldownMs).toISOString();
+  const nowIso = now.toISOString();
 
+  const isSupabaseReady = await checkSupabaseAvailable();
   if (isSupabaseReady) {
     try {
+      const serverClient = getServerSupabase();
       const field =
         recipientType === "owner" ? "last_owner_notification_at" : "last_visitor_notification_at";
-      await supabase
+
+      // Atomic conditional update on Postgres: matches ONLY IF null OR older than threshold
+      const { data, error } = await serverClient
         .from("chat_conversations")
-        .update({ [field]: now })
-        .eq("id", conversationId);
+        .update({ [field]: nowIso })
+        .eq("id", conversationId)
+        .or(`${field}.is.null,${field}.lt.${thresholdIso}`)
+        .select("id");
+
+      if (!error && Array.isArray(data) && data.length > 0) {
+        return true; // Lock successfully claimed atomically in Supabase
+      }
+      return false; // Cooldown is active or row not found
     } catch (e) {
-      console.warn("[Live Chat DB] Error updating notification timestamp in Supabase:", e);
+      console.warn("[Live Chat DB] Error in atomic Supabase lock claim, falling back:", e);
     }
   }
 
-  const conv = memoryConversations.get(conversationId);
-  if (conv) {
-    if (recipientType === "owner") conv.lastOwnerNotificationAt = now;
-    if (recipientType === "visitor") conv.lastVisitorNotificationAt = now;
-  }
+  // Durable store atomic lock claim with Node mutex
+  return runWithLock(() => {
+    const conv = localStore.conversations[conversationId];
+    if (!conv) return false;
+
+    const lastTimestamp =
+      recipientType === "owner" ? conv.lastOwnerNotificationAt : conv.lastVisitorNotificationAt;
+
+    if (lastTimestamp) {
+      const elapsed = Date.now() - new Date(lastTimestamp).getTime();
+      if (elapsed < cooldownMs) {
+        return false; // Throttled! Cooldown is active for this conversation
+      }
+    }
+
+    // Atomically claim lock right now
+    if (recipientType === "owner") {
+      conv.lastOwnerNotificationAt = nowIso;
+    } else {
+      conv.lastVisitorNotificationAt = nowIso;
+    }
+    conv.updatedAt = nowIso;
+    localStore.conversations[conversationId] = conv;
+    persistStoreToDisk();
+
+    return true; // Successfully claimed
+  });
 }
 
 export async function logNotification(entry: Omit<NotificationLog, "id" | "sentAt">): Promise<void> {
@@ -469,7 +595,8 @@ export async function logNotification(entry: Omit<NotificationLog, "id" | "sentA
   const isSupabaseReady = await checkSupabaseAvailable();
   if (isSupabaseReady) {
     try {
-      await supabase.from("chat_notification_logs").insert([
+      const serverClient = getServerSupabase();
+      await serverClient.from("chat_notification_logs").insert([
         {
           id: log.id,
           conversation_id: log.conversationId,
@@ -485,5 +612,8 @@ export async function logNotification(entry: Omit<NotificationLog, "id" | "sentA
     }
   }
 
-  memoryNotificationLogs.push(log);
+  runWithLock(() => {
+    localStore.notificationLogs.push(log);
+    persistStoreToDisk();
+  });
 }

@@ -1,5 +1,5 @@
-import { Conversation } from "./types";
-import { updateNotificationTimestamp, logNotification } from "./db";
+import type { Conversation } from "./types";
+import { claimNotificationLock, logNotification } from "./db";
 
 const DEFAULT_COOLDOWN_MINUTES = 10;
 
@@ -18,7 +18,7 @@ function getSiteUrl(): string {
 /**
  * Send an email via Resend if RESEND_API_KEY is configured
  */
-async function sendEmailViaResend({
+export async function sendEmailViaResend({
   to,
   subject,
   html,
@@ -63,35 +63,37 @@ async function sendEmailViaResend({
 }
 
 /**
- * Notify Portfolio Owner of a new visitor message with 10-minute cooldown
+ * Notify Portfolio Owner of a new visitor message
+ * - Cooldown is strictly independent per conversation (Conversation A activity never suppresses Conversation B).
+ * - Uses atomic database lock claim to prevent race conditions on simultaneous messages.
  */
 export async function notifyOwnerOfNewMessage(
-  conversation: Conversation,
+  conversation: Pick<Conversation, "id" | "visitorName" | "visitorEmail">,
   messageContent: string,
-): Promise<void> {
+): Promise<{ status: "sent" | "throttled" | "failed" }> {
   const ownerEmail = process.env.OWNER_EMAIL || "ganganathan.dev@gmail.com";
   const cooldownMs = getCooldownMs();
-  const now = Date.now();
+  const preview = messageContent.slice(0, 160);
 
-  // Check cooldown
-  if (conversation.lastOwnerNotificationAt) {
-    const lastSentTime = new Date(conversation.lastOwnerNotificationAt).getTime();
-    if (now - lastSentTime < cooldownMs) {
-      await logNotification({
-        conversationId: conversation.id,
-        recipientType: "owner",
-        recipientEmail: ownerEmail,
-        status: "throttled",
-        messagePreview: messageContent.slice(0, 100),
-      });
-      return;
-    }
+  // 1. ATOMIC LOCK CLAIM
+  // Concurrency-safe: claims lock ONLY if no notification for THIS conversation occurred within cooldown window
+  const lockClaimed = await claimNotificationLock(conversation.id, "owner", cooldownMs);
+
+  if (!lockClaimed) {
+    await logNotification({
+      conversationId: conversation.id,
+      recipientType: "owner",
+      recipientEmail: ownerEmail,
+      status: "throttled",
+      messagePreview: preview,
+    });
+    return { status: "throttled" };
   }
 
+  // 2. Lock claimed successfully: proceed with email dispatch
   const siteUrl = getSiteUrl();
   const inboxLink = `${siteUrl}/admin/inbox`;
   const visitorDisplay = conversation.visitorName || "A visitor";
-  const preview = messageContent.slice(0, 160);
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #0a0a0c; color: #f3f3f3; padding: 32px; border-radius: 16px; border: 1px solid #27272a;">
@@ -118,59 +120,52 @@ export async function notifyOwnerOfNewMessage(
     html,
   });
 
-  if (success) {
-    await updateNotificationTimestamp(conversation.id, "owner");
-    await logNotification({
-      conversationId: conversation.id,
-      recipientType: "owner",
-      recipientEmail: ownerEmail,
-      status: "sent",
-      messagePreview: preview,
-    });
-  } else {
-    await logNotification({
-      conversationId: conversation.id,
-      recipientType: "owner",
-      recipientEmail: ownerEmail,
-      status: "failed",
-      messagePreview: preview,
-    });
-  }
+  const finalStatus = success ? "sent" : "failed";
+  await logNotification({
+    conversationId: conversation.id,
+    recipientType: "owner",
+    recipientEmail: ownerEmail,
+    status: finalStatus,
+    messagePreview: preview,
+  });
+
+  return { status: finalStatus };
 }
 
 /**
- * Notify Visitor of an Owner reply with cooldown and explicit consent
+ * Notify Visitor of an Owner reply
+ * - Strict per-visitor independent cooldown tracking.
+ * - Requires visitor email and explicit consent.
  */
 export async function notifyVisitorOfOwnerReply(
-  conversation: Conversation,
+  conversation: Pick<Conversation, "id" | "visitorName" | "visitorEmail" | "emailNotificationsEnabled">,
   replyContent: string,
-): Promise<void> {
+): Promise<{ status: "sent" | "throttled" | "failed" | "skipped" }> {
   // Visitor must have provided a valid email and enabled notifications
   if (!conversation.visitorEmail || !conversation.emailNotificationsEnabled) {
-    return;
+    return { status: "skipped" };
   }
 
   const cooldownMs = getCooldownMs();
-  const now = Date.now();
+  const preview = replyContent.slice(0, 160);
 
-  // Check cooldown
-  if (conversation.lastVisitorNotificationAt) {
-    const lastSentTime = new Date(conversation.lastVisitorNotificationAt).getTime();
-    if (now - lastSentTime < cooldownMs) {
-      await logNotification({
-        conversationId: conversation.id,
-        recipientType: "visitor",
-        recipientEmail: conversation.visitorEmail,
-        status: "throttled",
-        messagePreview: replyContent.slice(0, 100),
-      });
-      return;
-    }
+  // 1. ATOMIC LOCK CLAIM FOR VISITOR REPLY
+  const lockClaimed = await claimNotificationLock(conversation.id, "visitor", cooldownMs);
+
+  if (!lockClaimed) {
+    await logNotification({
+      conversationId: conversation.id,
+      recipientType: "visitor",
+      recipientEmail: conversation.visitorEmail,
+      status: "throttled",
+      messagePreview: preview,
+    });
+    return { status: "throttled" };
   }
 
+  // 2. Lock claimed: dispatch email
   const siteUrl = getSiteUrl();
   const chatLink = `${siteUrl}/?live_chat=open`;
-  const preview = replyContent.slice(0, 160);
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #0a0a0c; color: #f3f3f3; padding: 32px; border-radius: 16px; border: 1px solid #27272a;">
@@ -197,23 +192,14 @@ export async function notifyVisitorOfOwnerReply(
     html,
   });
 
-  if (success) {
-    await updateNotificationTimestamp(conversation.id, "visitor");
-    await logNotification({
-      conversationId: conversation.id,
-      recipientType: "visitor",
-      recipientEmail: conversation.visitorEmail,
-      status: "sent",
-      messagePreview: preview,
-    });
-  } else {
-    await logNotification({
-      conversationId: conversation.id,
-      recipientType: "visitor",
-      recipientEmail: conversation.visitorEmail,
-      status: "failed",
-      messagePreview: preview,
-    });
-  }
-}
+  const finalStatus = success ? "sent" : "failed";
+  await logNotification({
+    conversationId: conversation.id,
+    recipientType: "visitor",
+    recipientEmail: conversation.visitorEmail,
+    status: finalStatus,
+    messagePreview: preview,
+  });
 
+  return { status: finalStatus };
+}
