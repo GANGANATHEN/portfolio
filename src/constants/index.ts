@@ -132,7 +132,13 @@ export const experiences = [
   },
 ];
 
-export const testimonials: any[] = [];
+export interface Testimonial {
+  name: string;
+  role: string;
+  message: string;
+}
+
+export const testimonials: Testimonial[] = [];
 
 export const projects = [
   {
