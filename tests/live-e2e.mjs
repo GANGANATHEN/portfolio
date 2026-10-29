@@ -233,6 +233,49 @@ async function runE2E() {
   assert.ok(reactData.reactions["👍"] && reactData.reactions["👍"].includes("visitor"));
   console.log("✔ Visitor emoji reaction (👍) toggled successfully");
 
+  // Multi-emoji reaction test: visitor adds a second reaction (🔥) without wiping 👍
+  const multiReactRes = await fetch(`${BASE_URL}/api/live-chat/reactions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: v1Cookie,
+    },
+    body: JSON.stringify({
+      messageId: lastMsg.id,
+      emoji: "🔥",
+    }),
+  });
+  assert.equal(multiReactRes.status, 200);
+  const multiReactData = await multiReactRes.json();
+  assert.ok(multiReactData.reactions["👍"] && multiReactData.reactions["👍"].includes("visitor"), "👍 must still be present");
+  assert.ok(multiReactData.reactions["🔥"] && multiReactData.reactions["🔥"].includes("visitor"), "🔥 must also be present (multi-emoji)");
+  console.log("✔ Multi-emoji reaction verified: visitor has both 👍 and 🔥 active");
+
+  // Admin reacts to visitor message with ❤️
+  const adminReactRes = await fetch(`${BASE_URL}/api/admin/live-chat/reactions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: adminCookie,
+    },
+    body: JSON.stringify({
+      messageId: v1FirstMsg.id,
+      conversationId: v1Conv.id,
+      emoji: "❤️",
+    }),
+  });
+  assert.equal(adminReactRes.status, 200);
+  const adminReactData = await adminReactRes.json();
+  assert.ok(adminReactData.reactions["❤️"] && adminReactData.reactions["❤️"].includes("owner"));
+  console.log("✔ Admin emoji reaction (❤️) registered successfully");
+
+  // Regression check: GET /api/live-chat/messages?mark_read=true with NO cookie must return 200 with empty array (never 500)
+  const noCookieRes = await fetch(`${BASE_URL}/api/live-chat/messages?mark_read=true`);
+  assert.equal(noCookieRes.status, 200, "Unauthenticated GET /api/live-chat/messages?mark_read=true must return 200 (never 500)");
+  const noCookieData = await noCookieRes.json();
+  assert.deepEqual(noCookieData.messages, [], "Unauthenticated visitor must receive empty messages array");
+  console.log("✔ Regression check passed: GET /api/live-chat/messages?mark_read=true without session returns 200 { messages: [] }");
+
   // PDF Export unauthorized check
   const unauthPdfRes = await fetch(`${BASE_URL}/api/admin/live-chat/export-pdf?conversationId=${v1Conv.id}`);
   assert.equal(unauthPdfRes.status, 401, "PDF export without admin cookie must return 401");

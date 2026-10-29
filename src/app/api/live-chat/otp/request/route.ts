@@ -132,9 +132,20 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error("[OTP Request Exception]:", error);
+    const isDbUnavailable =
+      error instanceof Error &&
+      (error.message.includes("Production Database Error") ||
+        error.message.includes("schema cache") ||
+        error.message.includes("chat_conversations"));
+
     return NextResponse.json(
-      { error: "Failed to generate verification code. Please try again." },
-      { status: 500 },
+      {
+        error: isDbUnavailable
+          ? "Live chat service is temporarily unavailable. Please try again shortly."
+          : "Failed to generate verification code. Please try again.",
+        code: isDbUnavailable ? "DATABASE_UNAVAILABLE" : "INTERNAL_ERROR",
+      },
+      { status: isDbUnavailable ? 503 : 500 },
     );
   }
 }

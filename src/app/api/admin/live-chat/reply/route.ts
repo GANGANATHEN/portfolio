@@ -87,6 +87,20 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error("[Admin Reply Error]:", error);
-    return NextResponse.json({ error: "Failed to send reply." }, { status: 500 });
+    const isDbUnavailable =
+      error instanceof Error &&
+      (error.message.includes("Production Database Error") ||
+        error.message.includes("schema cache") ||
+        error.message.includes("chat_conversations"));
+
+    return NextResponse.json(
+      {
+        error: isDbUnavailable
+          ? "Live chat service is temporarily unavailable. Please try again shortly."
+          : "Failed to send reply.",
+        code: isDbUnavailable ? "DATABASE_UNAVAILABLE" : "INTERNAL_ERROR",
+      },
+      { status: isDbUnavailable ? 503 : 500 },
+    );
   }
 }

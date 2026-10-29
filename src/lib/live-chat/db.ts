@@ -88,6 +88,14 @@ function persistStoreToDisk(): void {
 let supabaseTablesAvailable: boolean | null = null;
 let lastSupabaseCheckTime = 0;
 
+export class DatabaseUnavailableError extends Error {
+  public code = "DATABASE_UNAVAILABLE";
+  constructor(message = "Database service is temporarily unavailable.") {
+    super(message);
+    this.name = "DatabaseUnavailableError";
+  }
+}
+
 function shouldEnforceProductionPersistence(): boolean {
   return process.env.VERCEL === "1" || process.env.REQUIRE_SUPABASE === "true";
 }
@@ -104,7 +112,7 @@ async function checkSupabaseAvailable(): Promise<boolean> {
   if (supabaseTablesAvailable === true) return true;
   if (supabaseTablesAvailable === false && now - lastSupabaseCheckTime < 15000) {
     if (isVercelProduction) {
-      throw new Error(
+      throw new DatabaseUnavailableError(
         "[Production Database Error] Supabase tables are unavailable in production on Vercel. Ephemeral fallback is strictly disabled.",
       );
     }
@@ -118,7 +126,7 @@ async function checkSupabaseAvailable(): Promise<boolean> {
     supabaseTablesAvailable = !error;
     if (error) {
       if (isVercelProduction) {
-        throw new Error(
+        throw new DatabaseUnavailableError(
           `[Production Database Error] Supabase 'chat_conversations' query failed on Vercel: ${error.message}. Run migrations and verify credentials in Vercel.`,
         );
       }
@@ -131,9 +139,10 @@ async function checkSupabaseAvailable(): Promise<boolean> {
     }
   } catch (err: unknown) {
     supabaseTablesAvailable = false;
+    if (err instanceof DatabaseUnavailableError) throw err;
     const msg = err instanceof Error ? err.message : String(err);
     if (isVercelProduction) {
-      throw new Error(
+      throw new DatabaseUnavailableError(
         `[Production Database Error] Could not connect to Supabase on Vercel: ${msg}. Configure NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.`,
       );
     }
