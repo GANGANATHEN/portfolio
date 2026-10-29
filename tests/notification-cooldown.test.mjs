@@ -205,22 +205,24 @@ describe("Independent Per-Conversation Notification Cooldown & Concurrency", () 
   });
 
   test("5. Visitor reply notifications have independent cooldowns per visitor", async () => {
-    // Visitor 1 with email notifications enabled
+    // Visitor 1 with verified email and notifications enabled
     const token1 = generateSecureToken();
     const hash1 = hashToken(token1);
     const conv1 = await getOrCreateConversationByHash(hash1, "Visitor One");
     await updateConversationProfile(hash1, {
       visitorEmail: "visitor1@example.com",
       emailNotificationsEnabled: true,
+      emailVerified: true,
     });
 
-    // Visitor 2 with email notifications enabled
+    // Visitor 2 with verified email and notifications enabled
     const token2 = generateSecureToken();
     const hash2 = hashToken(token2);
     const conv2 = await getOrCreateConversationByHash(hash2, "Visitor Two");
     await updateConversationProfile(hash2, {
       visitorEmail: "visitor2@example.com",
       emailNotificationsEnabled: true,
+      emailVerified: true,
     });
 
     // Owner replies to Visitor 1
@@ -229,6 +231,7 @@ describe("Independent Per-Conversation Notification Cooldown & Concurrency", () 
         id: conv1.id,
         visitorName: "Visitor One",
         visitorEmail: "visitor1@example.com",
+        emailVerified: true,
         emailNotificationsEnabled: true,
       },
       "Reply to Visitor 1",
@@ -241,6 +244,7 @@ describe("Independent Per-Conversation Notification Cooldown & Concurrency", () 
         id: conv1.id,
         visitorName: "Visitor One",
         visitorEmail: "visitor1@example.com",
+        emailVerified: true,
         emailNotificationsEnabled: true,
       },
       "Second quick reply to Visitor 1",
@@ -257,6 +261,7 @@ describe("Independent Per-Conversation Notification Cooldown & Concurrency", () 
         id: conv2.id,
         visitorName: "Visitor Two",
         visitorEmail: "visitor2@example.com",
+        emailVerified: true,
         emailNotificationsEnabled: true,
       },
       "Reply to Visitor 2",

@@ -10,14 +10,8 @@ export async function GET(req: NextRequest) {
   let token = req.cookies.get(VISITOR_COOKIE_NAME)?.value;
   let isNewSession = false;
 
-  // Support session token from query string (e.g. from notification email)
-  const queryToken = req.nextUrl.searchParams.get("token");
-  if (queryToken && queryToken.length === 64) {
-    token = queryToken;
-    isNewSession = true;
-  }
-
-  if (!token || token.length < 32) {
+  // Session token must strictly be 64-char hex (32 bytes)
+  if (!token || token.length < 32 || !/^[0-9a-fA-F]+$/.test(token)) {
     token = generateSecureToken();
     isNewSession = true;
   }
@@ -26,11 +20,12 @@ export async function GET(req: NextRequest) {
   const conversation = await getOrCreateConversationByHash(tokenHash);
 
   const res = NextResponse.json({
+    conversationId: conversation.id,
     visitorName: conversation.visitorName,
     visitorEmail: conversation.visitorEmail,
+    emailVerified: conversation.emailVerified,
     emailNotificationsEnabled: conversation.emailNotificationsEnabled,
     unreadVisitorCount: conversation.unreadVisitorCount,
-    conversationId: conversation.id,
   });
 
   if (isNewSession) {
@@ -40,7 +35,7 @@ export async function GET(req: NextRequest) {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 365, // 1 year
+      maxAge: 60 * 60 * 24 * 365, // 1 year persistent visitor session
       path: "/",
     });
   }

@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     let token = req.cookies.get(VISITOR_COOKIE_NAME)?.value;
     let isNewSession = false;
 
-    if (!token || token.length < 32) {
+    if (!token || token.length < 32 || !/^[0-9a-fA-F]+$/.test(token)) {
       token = generateSecureToken();
       isNewSession = true;
     }
@@ -52,13 +52,6 @@ export async function POST(req: NextRequest) {
     const notifyConsent =
       typeof emailNotificationsEnabled === "boolean" ? emailNotificationsEnabled : undefined;
 
-    if (notifyConsent && !sanitizedEmail) {
-      return NextResponse.json(
-        { error: "A valid email address is required to receive notifications." },
-        { status: 400 },
-      );
-    }
-
     const updated = await updateConversationProfile(tokenHash, {
       visitorName: sanitizedName,
       visitorEmail: sanitizedEmail,
@@ -70,7 +63,8 @@ export async function POST(req: NextRequest) {
       profile: {
         visitorName: updated?.visitorName,
         visitorEmail: updated?.visitorEmail,
-        emailNotificationsEnabled: updated?.emailNotificationsEnabled,
+        emailVerified: updated?.emailVerified ?? false,
+        emailNotificationsEnabled: updated?.emailNotificationsEnabled ?? false,
       },
     });
 

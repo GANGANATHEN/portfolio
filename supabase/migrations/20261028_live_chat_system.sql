@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS public.chat_conversations (
     session_token_hash VARCHAR(64) NOT NULL UNIQUE,
     visitor_name VARCHAR(100) DEFAULT 'Visitor',
     visitor_email VARCHAR(255) NULL,
+    email_verified BOOLEAN NOT NULL DEFAULT FALSE,
     email_notifications_enabled BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
@@ -20,6 +21,19 @@ CREATE TABLE IF NOT EXISTS public.chat_conversations (
     last_owner_notification_at TIMESTAMPTZ NULL,
     last_visitor_notification_at TIMESTAMPTZ NULL
 );
+
+-- Ensure email_verified column exists if table was already created
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'chat_conversations' 
+          AND column_name = 'email_verified'
+    ) THEN
+        ALTER TABLE public.chat_conversations ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT FALSE;
+    END IF;
+END $$;
 
 -- Indexes for lightning fast session resolution and inbox queries
 CREATE INDEX IF NOT EXISTS idx_chat_conversations_hash ON public.chat_conversations(session_token_hash);
@@ -52,10 +66,26 @@ CREATE TABLE IF NOT EXISTS public.chat_notification_logs (
 
 CREATE INDEX IF NOT EXISTS idx_chat_notification_logs_conv ON public.chat_notification_logs(conversation_id, sent_at DESC);
 
--- 4. ROW LEVEL SECURITY (RLS)
+-- 4. EMAIL OTP VERIFICATION TABLE (Secure single-use hashed OTP storage)
+CREATE TABLE IF NOT EXISTS public.chat_email_otps (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    conversation_id UUID NOT NULL REFERENCES public.chat_conversations(id) ON DELETE CASCADE,
+    email VARCHAR(255) NOT NULL,
+    otp_hash VARCHAR(64) NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    max_attempts INTEGER NOT NULL DEFAULT 5,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    used_at TIMESTAMPTZ NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_email_otps_lookup ON public.chat_email_otps(conversation_id, email, expires_at DESC);
+
+-- 5. ROW LEVEL SECURITY (RLS)
 ALTER TABLE public.chat_conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_notification_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.chat_email_otps ENABLE ROW LEVEL SECURITY;
 
 -- Service role has full permissions for server-side route handlers
 CREATE POLICY "Service role full access on chat_conversations"
@@ -79,15 +109,40 @@ CREATE POLICY "Service role full access on chat_notification_logs"
     USING (true)
     WITH CHECK (true);
 
+CREATE POLICY "Service role full access on chat_email_otps"
+    ON public.chat_email_otps
+    FOR ALL
+    TO service_role
+    USING (true)
+    WITH CHECK (true);
+
 -- Allow public anon client read/write strictly through the secure server route handlers
 -- (Direct database exposure to anonymous client is locked down)
-CREATE POLICY "Deny direct public table access"
+CREATE POLICY "Deny direct public table access conversations"
     ON public.chat_conversations
     FOR ALL
     TO anon
     USING (false);
 
--- 5. UPDATED_AT TRIGGER
+CREATE POLICY "Deny direct public table access messages"
+    ON public.chat_messages
+    FOR ALL
+    TO anon
+    USING (false);
+
+CREATE POLICY "Deny direct public table access logs"
+    ON public.chat_notification_logs
+    FOR ALL
+    TO anon
+    USING (false);
+
+CREATE POLICY "Deny direct public table access otps"
+    ON public.chat_email_otps
+    FOR ALL
+    TO anon
+    USING (false);
+
+-- 6. UPDATED_AT TRIGGER
 CREATE OR REPLACE FUNCTION update_chat_timestamp()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -101,4 +156,3 @@ CREATE TRIGGER trigger_update_chat_conversation
     BEFORE UPDATE ON public.chat_conversations
     FOR EACH ROW
     EXECUTE FUNCTION update_chat_timestamp();
-

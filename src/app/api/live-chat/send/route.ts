@@ -8,10 +8,12 @@ import {
 import {
   getOrCreateConversationByHash,
   addMessage,
+  getAttachmentById,
 } from "@/lib/live-chat/db";
 import { notifyOwnerOfNewMessage } from "@/lib/live-chat/email";
+import type { ChatAttachment } from "@/lib/live-chat/types";
 
-// In-memory rate limiter for live chat
+// In-memory rate limiter for live chat messaging
 const visitorRateLimits = new Map<string, { count: number; resetAt: number }>();
 
 function checkVisitorRateLimit(tokenHash: string): boolean {
@@ -23,7 +25,7 @@ function checkVisitorRateLimit(tokenHash: string): boolean {
     return false;
   }
 
-  if (record.count >= 15) {
+  if (record.count >= 20) {
     return true; // Limit exceeded
   }
 
@@ -56,7 +58,9 @@ export async function POST(req: NextRequest) {
     }
 
     const sanitized = sanitizeText(body.content);
-    if (!sanitized) {
+    const hasAttachments = Array.isArray(body.attachmentIds) && body.attachmentIds.length > 0;
+
+    if (!sanitized && !hasAttachments) {
       return NextResponse.json({ error: "Message cannot be empty." }, { status: 400 });
     }
 
@@ -69,16 +73,39 @@ export async function POST(req: NextRequest) {
 
     const conversation = await getOrCreateConversationByHash(tokenHash);
 
+    // Validate and link attachments
+    const attachments: ChatAttachment[] = [];
+    if (hasAttachments) {
+      for (const id of body.attachmentIds) {
+        if (typeof id === "string") {
+          const att = await getAttachmentById(id);
+          // Only link attachments belonging to this conversation
+          if (att && att.conversationId === conversation.id) {
+            attachments.push(att);
+          }
+        }
+      }
+    }
+
+    const replyToId = typeof body.replyToId === "string" ? body.replyToId : null;
+    const clientMessageId = typeof body.clientMessageId === "string" ? body.clientMessageId : null;
+
+    // Persist message first (guarantees message persistence regardless of email delivery)
     const message = await addMessage({
       conversationId: conversation.id,
       senderType: "visitor",
-      content: sanitized,
+      content: sanitized || (attachments.length > 0 ? `[Attached ${attachments[0].fileName}]` : ""),
+      replyToId,
+      attachments,
+      clientMessageId,
     });
 
-    // Fire & wait for throttled email notification
-    notifyOwnerOfNewMessage(conversation, sanitized).catch((err) =>
-      console.error("[Owner Notification Error]:", err),
-    );
+    // Safely await email notification to prevent serverless execution freeze
+    try {
+      await notifyOwnerOfNewMessage(conversation, message.content);
+    } catch (err) {
+      console.error("[Owner Notification Exception]:", err);
+    }
 
     const res = NextResponse.json({
       message: {
@@ -86,6 +113,11 @@ export async function POST(req: NextRequest) {
         senderType: message.senderType,
         content: message.content,
         createdAt: message.createdAt,
+        replyToId: message.replyToId,
+        replyPreview: message.replyPreview,
+        reactions: message.reactions,
+        attachments: message.attachments,
+        clientMessageId: message.clientMessageId,
       },
     });
 
@@ -105,7 +137,7 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error("[Live Chat Send Error]:", error);
     return NextResponse.json(
-      { error: "Failed to send message. Please try again." },
+      { error: "Failed to send message. Please retry." },
       { status: 500 },
     );
   }

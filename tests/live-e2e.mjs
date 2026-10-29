@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 const BASE_URL = process.env.TEST_URL || "http://localhost:3000";
+const TEST_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "dev_admin_password_for_testing";
 
 async function runE2E() {
   console.log("=== 1. Testing Route Availability ===");
@@ -42,15 +43,18 @@ async function runE2E() {
   assert.ok(chatData.reply, "Chatbot should return a friendly reply");
   console.log("✔ Chatbot response (Graceful fallback):", chatData.reply.slice(0, 80) + "...");
 
-  console.log("\n=== 3. Testing Visitor Live Chat Session & Privacy ===");
-  // Visitor 1 Session
+  console.log("\n=== 3. Testing Anonymous Guest Chat & Session Privacy ===");
+  // Visitor 1 Session (Anonymous Guest)
   const v1SessionRes = await fetch(`${BASE_URL}/api/live-chat/session`);
   assert.equal(v1SessionRes.status, 200);
   const v1Cookie = v1SessionRes.headers.get("set-cookie");
   assert.ok(v1Cookie && v1Cookie.includes("ganganathan_visitor_session="));
-  console.log("✔ Visitor 1 session established with HTTP-only cookie");
+  const v1SessionData = await v1SessionRes.json();
+  assert.equal(v1SessionData.visitorEmail, null, "Anonymous guest has no initial email");
+  assert.equal(v1SessionData.emailVerified, false, "Anonymous guest is unverified");
+  console.log("✔ Visitor 1 session established with HTTP-only cookie (Anonymous guest)");
 
-  // Visitor 1 sends message
+  // Visitor 1 sends message as guest
   const v1SendRes = await fetch(`${BASE_URL}/api/live-chat/send`, {
     method: "POST",
     headers: {
@@ -58,13 +62,13 @@ async function runE2E() {
       Cookie: v1Cookie,
     },
     body: JSON.stringify({
-      content: "Hello Ganganathan, I am testing your live chat from India!",
+      content: "Hello Ganganathan, I am testing your anonymous guest chat!",
     }),
   });
   assert.equal(v1SendRes.status, 200);
   const v1SendData = await v1SendRes.json();
-  assert.equal(v1SendData.message.content, "Hello Ganganathan, I am testing your live chat from India!");
-  console.log("✔ Visitor 1 sent message successfully");
+  assert.equal(v1SendData.message.content, "Hello Ganganathan, I am testing your anonymous guest chat!");
+  console.log("✔ Visitor 1 sent message successfully without email");
 
   // Visitor 2 Session (Privacy Isolation Test)
   const v2SessionRes = await fetch(`${BASE_URL}/api/live-chat/session`);
@@ -81,7 +85,63 @@ async function runE2E() {
   );
   console.log("✔ Privacy check passed: Visitor 2 has zero access to Visitor 1's conversation");
 
-  console.log("\n=== 4. Testing Admin Authentication & Protection ===");
+  console.log("\n=== 4. Testing Secure Email OTP Endpoints ===");
+  // Request OTP for invalid email
+  const badOtpReq = await fetch(`${BASE_URL}/api/live-chat/otp/request`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: v1Cookie,
+    },
+    body: JSON.stringify({ email: "invalid-email-format" }),
+  });
+  assert.equal(badOtpReq.status, 400, "Invalid email format must be rejected");
+
+  // Request OTP for valid email
+  const validOtpReq = await fetch(`${BASE_URL}/api/live-chat/otp/request`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: v1Cookie,
+    },
+    body: JSON.stringify({ email: "e2e.test.visitor@example.com" }),
+  });
+  assert.equal(validOtpReq.status, 200, "Valid OTP request should return 200");
+  const otpReqData = await validOtpReq.json();
+  assert.equal(otpReqData.success, true);
+  assert.equal(otpReqData.otp, undefined, "OTP MUST NEVER be returned in response JSON");
+  console.log("✔ OTP request endpoint successfully dispatched code without leaking OTP");
+
+  // Immediate second request should be throttled by 60s cooldown
+  const rapidOtpReq = await fetch(`${BASE_URL}/api/live-chat/otp/request`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: v1Cookie,
+    },
+    body: JSON.stringify({ email: "e2e.test.visitor@example.com" }),
+  });
+  assert.equal(rapidOtpReq.status, 429, "Rapid second OTP request must be throttled with HTTP 429");
+  console.log("✔ OTP resend cooldown (60s) enforced successfully (HTTP 429)");
+
+  // Attempt invalid OTP verification
+  const badVerifyRes = await fetch(`${BASE_URL}/api/live-chat/otp/verify`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: v1Cookie,
+    },
+    body: JSON.stringify({
+      email: "e2e.test.visitor@example.com",
+      otp: "000000",
+    }),
+  });
+  assert.equal(badVerifyRes.status, 400);
+  const badVerifyData = await badVerifyRes.json();
+  assert.ok(badVerifyData.error.includes("Invalid verification code"));
+  console.log("✔ Invalid OTP verification correctly rejected");
+
+  console.log("\n=== 5. Testing Admin Authentication & Protection ===");
   // Unauthenticated access
   const unauthRes = await fetch(`${BASE_URL}/api/admin/live-chat/conversations`);
   assert.equal(unauthRes.status, 401, "Unauthenticated admin request must be rejected with 401");
@@ -91,7 +151,7 @@ async function runE2E() {
   const loginRes = await fetch(`${BASE_URL}/api/admin/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password: "ganganathan123" }),
+    body: JSON.stringify({ password: TEST_ADMIN_PASSWORD }),
   });
   assert.equal(loginRes.status, 200);
   const adminCookie = loginRes.headers.get("set-cookie");
@@ -107,7 +167,7 @@ async function runE2E() {
   assert.ok(adminConvsData.conversations.length > 0);
   // Admin finds Visitor 1's conversation
   const v1Conv = adminConvsData.conversations.find((c) =>
-    c.latestMessage && c.latestMessage.includes("testing your live chat"),
+    c.latestMessage && c.latestMessage.includes("testing your anonymous guest chat"),
   );
   assert.ok(v1Conv, "Admin should locate Visitor 1's conversation");
   console.log("✔ Admin retrieved conversation list (found %d conversation(s))", adminConvsData.conversations.length);
@@ -127,7 +187,7 @@ async function runE2E() {
   assert.equal(replyRes.status, 200);
   console.log("✔ Admin replied to visitor conversation");
 
-  // Visitor 1 fetches messages and verifies reply
+  // Visitor 1 fetches messages and verifies reply in active session
   const v1UpdatedRes = await fetch(`${BASE_URL}/api/live-chat/messages?mark_read=true`, {
     headers: { Cookie: v1Cookie },
   });
@@ -135,7 +195,59 @@ async function runE2E() {
   const lastMsg = v1UpdatedData.messages[v1UpdatedData.messages.length - 1];
   assert.equal(lastMsg.senderType, "owner");
   assert.ok(lastMsg.content.includes("It is working in real time!"));
-  console.log("✔ Visitor 1 received owner's reply: \"%s\"", lastMsg.content);
+  console.log("✔ Visitor 1 received owner's reply in guest session: \"%s\"", lastMsg.content);
+
+  console.log("\n=== 6. Testing Advanced Chat Operations (Edits, Reactions, PDF Export) ===");
+  // Visitor 1 edits their first message
+  const v1FirstMsg = v1UpdatedData.messages[0];
+  const editRes = await fetch(`${BASE_URL}/api/live-chat/messages`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: v1Cookie,
+    },
+    body: JSON.stringify({
+      messageId: v1FirstMsg.id,
+      content: "Hello Ganganathan, I am testing your anonymous guest chat! (edited version)",
+    }),
+  });
+  assert.equal(editRes.status, 200, "Message edit should return HTTP 200");
+  const editData = await editRes.json();
+  assert.equal(editData.message.isEdited, true);
+  console.log("✔ Visitor message editing verified");
+
+  // Visitor 1 reacts to Admin's reply with 👍
+  const reactRes = await fetch(`${BASE_URL}/api/live-chat/reactions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: v1Cookie,
+    },
+    body: JSON.stringify({
+      messageId: lastMsg.id,
+      emoji: "👍",
+    }),
+  });
+  assert.equal(reactRes.status, 200, "Emoji reaction should return HTTP 200");
+  const reactData = await reactRes.json();
+  assert.ok(reactData.reactions["👍"] && reactData.reactions["👍"].includes("visitor"));
+  console.log("✔ Visitor emoji reaction (👍) toggled successfully");
+
+  // PDF Export unauthorized check
+  const unauthPdfRes = await fetch(`${BASE_URL}/api/admin/live-chat/export-pdf?conversationId=${v1Conv.id}`);
+  assert.equal(unauthPdfRes.status, 401, "PDF export without admin cookie must return 401");
+  console.log("✔ PDF export security check passed (HTTP 401 unauthorized)");
+
+  // PDF Export authorized check
+  const pdfRes = await fetch(`${BASE_URL}/api/admin/live-chat/export-pdf?conversationId=${v1Conv.id}`, {
+    headers: { Cookie: adminCookie },
+  });
+  assert.equal(pdfRes.status, 200, "Authorized PDF export must return HTTP 200");
+  assert.equal(pdfRes.headers.get("content-type"), "application/pdf");
+  const pdfBuffer = await pdfRes.arrayBuffer();
+  const pdfHeader = Buffer.from(pdfBuffer.slice(0, 5)).toString("utf-8");
+  assert.equal(pdfHeader, "%PDF-", "Exported document must start with valid PDF header");
+  console.log("✔ Full conversation PDF export verified (%d bytes generated)", pdfBuffer.byteLength);
 
   console.log("\n=======================================================");
   console.log("🎉 ALL E2E FUNCTIONAL, SECURITY, AND PRIVACY CHECKS PASSED!");
