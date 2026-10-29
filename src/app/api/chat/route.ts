@@ -118,77 +118,103 @@ export async function POST(req: Request) {
       ...formattedMessages,
     ];
 
-    // 5. Send request to Groq with timeout protection
-    let groqRes: Response;
-    try {
-      groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${API_KEY.trim()}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
-          messages: messages,
-          temperature: 0.7,
-          max_tokens: 300,
-        }),
-        signal: AbortSignal.timeout(10000),
-      });
-    } catch (fetchErr: unknown) {
-      const err = fetchErr as Error;
-      if (err.name === "TimeoutError") {
-        return NextResponse.json({
-          reply:
-            "I'm taking a bit longer than usual to think. Please try asking again in a few seconds!",
-          status: "timeout",
+    // 5. Model resolution with automatic fallback hierarchy
+    // Prioritizes configured model or active high-speed models on Groq
+    const configuredModel = process.env.GROQ_MODEL?.trim();
+    const candidateModels = [
+      ...(configuredModel ? [configuredModel] : []),
+      "qwen/qwen3.8-27b",
+      "openai/gpt-oss-120b",
+      "openai/gpt-oss-20b",
+      "llama-3.3-70b-versatile",
+    ].filter((v, i, a) => a.indexOf(v) === i); // deduplicate
+
+    let lastErrorDetails: { status?: number; code?: string; message?: string } | null = null;
+    let selectedReply: string | null = null;
+
+    for (const model of candidateModels) {
+      try {
+        const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${API_KEY.trim()}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: model,
+            messages: messages,
+            temperature: 0.7,
+            max_tokens: 350,
+          }),
+          signal: AbortSignal.timeout(10000),
         });
+
+        const data = await groqRes.json().catch(() => null);
+
+        if (groqRes.ok && data && !data.error && data.choices?.[0]?.message) {
+          const msg = data.choices[0].message;
+          const content = typeof msg.content === "string" && msg.content.trim() ? msg.content.trim() : null;
+          const reasoning = typeof msg.reasoning === "string" && msg.reasoning.trim() ? msg.reasoning.trim() : null;
+          const resolved = content || reasoning;
+          if (resolved) {
+            selectedReply = resolved;
+            break;
+          }
+        }
+
+        const errCode = data?.error?.code || groqRes.statusText;
+        lastErrorDetails = {
+          status: groqRes.status,
+          code: errCode,
+          message: data?.error?.message,
+        };
+
+        // If credentials are invalid (401), trying other models will not succeed
+        if (groqRes.status === 401 || errCode === "invalid_api_key") {
+          return NextResponse.json({
+            reply:
+              "My AI brain is currently waiting for renewed Groq API credentials. You can still message Ganganathan directly via the Live Chat button or the Contact form below!",
+            status: "invalid_api_key",
+          });
+        }
+      } catch (fetchErr: unknown) {
+        const err = fetchErr as Error;
+        if (err.name === "TimeoutError") {
+          lastErrorDetails = { status: 408, code: "timeout", message: "Timeout" };
+        } else {
+          lastErrorDetails = { status: 500, code: "network_error", message: err.message };
+        }
       }
+    }
+
+    if (selectedReply) {
+      return NextResponse.json({ reply: selectedReply });
+    }
+
+    // Handle categorized errors if all models failed
+    if (lastErrorDetails?.status === 429) {
       return NextResponse.json({
         reply:
-          "I'm having trouble connecting to my neural network right now. Please feel free to use the Live Chat or Contact form!",
-        status: "network_error",
+          "I've hit my conversation rate limit for the moment. Please wait a minute or connect directly via Live Chat!",
+        status: "rate_limited",
       });
     }
 
-    const data = await groqRes.json().catch(() => null);
-
-    if (!groqRes.ok || !data || data.error) {
-      const errorCode = data?.error?.code || groqRes.statusText;
-      console.warn(`[Groq AI] Upstream response ${groqRes.status}: ${errorCode}`);
-
-      if (groqRes.status === 401 || errorCode === "invalid_api_key") {
-        return NextResponse.json({
-          reply:
-            "My AI brain is currently waiting for renewed Groq API credentials. You can still message Ganganathan directly via the Live Chat button or the Contact form below!",
-          status: "invalid_api_key",
-        });
-      }
-
-      if (groqRes.status === 429) {
-        return NextResponse.json({
-          reply:
-            "I've hit my conversation rate limit for the moment. Please wait a minute or connect directly via Live Chat!",
-          status: "rate_limited",
-        });
-      }
-
+    if (lastErrorDetails?.code === "timeout" || lastErrorDetails?.status === 408) {
       return NextResponse.json({
         reply:
-          "I'm temporarily resting my circuits. Feel free to explore the portfolio or drop a direct message via Live Chat!",
-        status: "upstream_error",
+          "I'm taking a bit longer than usual to think. Please try asking again in a few seconds!",
+        status: "timeout",
       });
     }
 
-    const reply = data?.choices?.[0]?.message?.content;
-    if (!reply) {
-      return NextResponse.json({
-        reply:
-          "I heard you, but I couldn't formulate a reply right now. What else would you like to know about Ganganathan's work?",
-      });
-    }
-
-    return NextResponse.json({ reply: reply.trim() });
+    // Genuine fallback message only if upstream providers failed completely
+    console.warn("[Groq AI] All candidate models failed. Last status:", lastErrorDetails?.status, lastErrorDetails?.code);
+    return NextResponse.json({
+      reply:
+        "I'm temporarily resting my circuits. Feel free to explore the portfolio or drop a direct message via Live Chat!",
+      status: "upstream_error",
+    });
   } catch (error) {
     console.error("[Chat API Internal Error]:", error);
     return NextResponse.json(

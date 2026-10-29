@@ -40,8 +40,8 @@ async function runE2E() {
   });
   assert.equal(chatRes.status, 200, "Chat route should gracefully return status 200");
   const chatData = await chatRes.json();
-  assert.ok(chatData.reply, "Chatbot should return a friendly reply");
-  console.log("✔ Chatbot response (Graceful fallback):", chatData.reply.slice(0, 80) + "...");
+  assert.ok(chatData.reply && chatData.reply.length > 10, "Chatbot should return a substantial reply");
+  console.log("✔ Chatbot response (Live AI Response):", chatData.reply.slice(0, 100) + "...");
 
   console.log("\n=== 3. Testing Anonymous Guest Chat & Session Privacy ===");
   // Visitor 1 Session (Anonymous Guest)

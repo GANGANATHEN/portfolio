@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useCallback, useId } from "react";
+import React, { useState, useEffect, useCallback, useId, useRef } from "react";
 import {
   Terminal,
   Copy,
@@ -14,10 +14,20 @@ import {
   Clock,
   User,
   Sparkles,
+  ChevronDown,
 } from "lucide-react";
 import type { PublicCommand } from "@/lib/commands/types";
 
 const CATEGORIES = ["All", "Git", "Docker", "Linux", "CLI", "Web", "General"];
+
+const FORM_CATEGORIES = [
+  { name: "Git", dot: "bg-orange-400" },
+  { name: "Docker", dot: "bg-sky-400" },
+  { name: "Linux", dot: "bg-amber-400" },
+  { name: "CLI", dot: "bg-emerald-400" },
+  { name: "Web", dot: "bg-cyan-400" },
+  { name: "General", dot: "bg-purple-400" },
+];
 
 export default function Commands() {
   const [commands, setCommands] = useState<PublicCommand[]>([]);
@@ -30,6 +40,9 @@ export default function Commands() {
   const [commandText, setCommandText] = useState("");
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState("Git");
+  const [isCategoryOpen, setIsCategoryOpen] = useState(false);
+  const [focusedCatIndex, setFocusedCatIndex] = useState(-1);
+  const categoryDropdownRef = useRef<HTMLDivElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -160,6 +173,50 @@ export default function Commands() {
     };
   }, [expandedCommand]);
 
+  // Close category dropdown on outside click
+  useEffect(() => {
+    if (!isCategoryOpen) return;
+    const handleOutsideClick = (e: MouseEvent | TouchEvent) => {
+      if (
+        categoryDropdownRef.current &&
+        !categoryDropdownRef.current.contains(e.target as Node)
+      ) {
+        setIsCategoryOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", handleOutsideClick);
+    return () => document.removeEventListener("pointerdown", handleOutsideClick);
+  }, [isCategoryOpen]);
+
+  // Keyboard navigation for category dropdown
+  const handleCategoryKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (!isCategoryOpen) {
+        setIsCategoryOpen(true);
+        setFocusedCatIndex(0);
+      } else {
+        setFocusedCatIndex((prev) => (prev + 1) % FORM_CATEGORIES.length);
+      }
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!isCategoryOpen) {
+        setIsCategoryOpen(true);
+        setFocusedCatIndex(FORM_CATEGORIES.length - 1);
+      } else {
+        setFocusedCatIndex((prev) => (prev - 1 + FORM_CATEGORIES.length) % FORM_CATEGORIES.length);
+      }
+    } else if (e.key === "Enter" || e.key === " ") {
+      if (isCategoryOpen && focusedCatIndex >= 0) {
+        e.preventDefault();
+        setCategory(FORM_CATEGORIES[focusedCatIndex].name);
+        setIsCategoryOpen(false);
+      }
+    } else if (e.key === "Escape" || e.key === "Tab") {
+      setIsCategoryOpen(false);
+    }
+  };
+
   // Filter commands by category
   const filteredCommands = commands.filter((c) => {
     if (selectedCategory === "All") return true;
@@ -263,30 +320,92 @@ export default function Commands() {
                 />
               </div>
 
-              {/* Category */}
-              <div>
+              {/* Category Dropdown */}
+              <div ref={categoryDropdownRef} className="relative">
                 <label
                   htmlFor={categorySelectId}
                   className="block text-xs font-mono text-gray-400 uppercase tracking-wider mb-1.5"
                 >
                   Category
                 </label>
-                <div className="relative">
-                  <Tag className="w-4 h-4 text-gray-500 absolute left-3 top-3 pointer-events-none" />
-                  <select
-                    id={categorySelectId}
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="w-full bg-[#0e141e] border border-white/10 rounded-xl pl-9 pr-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-400 transition-colors cursor-pointer"
+
+                {/* Custom Terminal Category Trigger */}
+                <button
+                  id={categorySelectId}
+                  type="button"
+                  aria-haspopup="listbox"
+                  aria-expanded={isCategoryOpen}
+                  aria-label="Select command category"
+                  onClick={() => setIsCategoryOpen((prev) => !prev)}
+                  onKeyDown={handleCategoryKeyDown}
+                  className={`w-full bg-[#0c1017] border rounded-xl px-3.5 py-2 text-sm text-white flex items-center justify-between transition-all cursor-pointer font-mono outline-none ${
+                    isCategoryOpen
+                      ? "border-cyan-400 ring-2 ring-cyan-500/20 shadow-lg shadow-cyan-500/10"
+                      : "border-white/10 hover:border-cyan-500/40 hover:bg-[#0e141e]"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Tag className="w-4 h-4 text-cyan-400 shrink-0" />
+                    <span className="flex items-center gap-2">
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          FORM_CATEGORIES.find((c) => c.name === category)?.dot || "bg-cyan-400"
+                        }`}
+                      />
+                      <span className="text-white font-bold">{category}</span>
+                    </span>
+                  </div>
+
+                  <ChevronDown
+                    className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${
+                      isCategoryOpen ? "rotate-180 text-cyan-400" : ""
+                    }`}
+                  />
+                </button>
+
+                {/* Hidden native input for semantic form accessibility */}
+                <input type="hidden" name="category" value={category} />
+
+                {/* Floating Custom Terminal Dropdown Menu */}
+                {isCategoryOpen && (
+                  <div
+                    role="listbox"
+                    aria-label="Command categories"
+                    className="absolute top-full left-0 right-0 mt-2 z-50 bg-[#0c1017] border border-cyan-500/30 rounded-2xl shadow-2xl p-1.5 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100"
                   >
-                    <option value="Git">Git</option>
-                    <option value="Docker">Docker</option>
-                    <option value="Linux">Linux</option>
-                    <option value="CLI">CLI</option>
-                    <option value="Web">Web</option>
-                    <option value="General">General</option>
-                  </select>
-                </div>
+                    {FORM_CATEGORIES.map((cat, idx) => {
+                      const isSelected = category === cat.name;
+                      const isFocused = focusedCatIndex === idx;
+
+                      return (
+                        <div
+                          key={cat.name}
+                          role="option"
+                          aria-selected={isSelected}
+                          onClick={() => {
+                            setCategory(cat.name);
+                            setIsCategoryOpen(false);
+                          }}
+                          onMouseEnter={() => setFocusedCatIndex(idx)}
+                          className={`w-full px-3 py-2 rounded-xl text-xs font-mono flex items-center justify-between transition-colors cursor-pointer ${
+                            isSelected
+                              ? "bg-cyan-500/15 text-cyan-300 font-bold border border-cyan-500/20"
+                              : isFocused
+                              ? "bg-white/10 text-white"
+                              : "text-gray-300 hover:bg-white/5 hover:text-white"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className={`w-2 h-2 rounded-full ${cat.dot}`} />
+                            <span>{cat.name}</span>
+                          </div>
+
+                          {isSelected && <Check className="w-3.5 h-3.5 text-cyan-400 shrink-0" />}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 

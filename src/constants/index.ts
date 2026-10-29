@@ -132,57 +132,9 @@ export const experiences = [
   },
 ];
 
-export const testimonials = [
-  {
-    id: 1,
-    name: "Alex Rivera",
-    testimonial:
-      "Ganganathan is an exceptional frontend developer. His 3D integrations and attention to responsive micro-interactions are top tier.",
-    created_at: "2024-06-12T10:00:00Z",
-  },
-  {
-    id: 2,
-    name: "Priya Sharma",
-    testimonial:
-      "The performance and smooth animations across mobile and desktop are stunning. Highly recommended full-stack engineer!",
-    created_at: "2024-06-14T14:30:00Z",
-  },
-  {
-    id: 3,
-    name: "Michael Chen",
-    testimonial:
-      "Working with Ganganathan on complex React and Three.js components was a seamless experience. Fast turnaround and clean code.",
-    created_at: "2024-06-16T09:15:00Z",
-  },
-];
+export const testimonials: any[] = [];
 
 export const projects = [
-  {
-    name: "iPhone 15 Pro",
-    description:
-      "Interactive 3D Apple iPhone 15 Pro showcase website featuring realistic Three.js models, GSAP animations, and dynamic color styling.",
-    tags: [
-      {
-        name: "React",
-        color: "blue-text-gradient",
-      },
-      {
-        name: "ThreeJs",
-        color: "orange-text-gradient",
-      },
-      {
-        name: "Tailwind",
-        color: "pink-text-gradient",
-      },
-      {
-        name: "sentry",
-        color: "green-text-gradient",
-      },
-    ],
-    image: appleimg,
-    source_code_link: "https://github.com/GANGANATHEN/Project_React",
-    url: "https://ganganathan-pple.netlify.app",
-  },
   {
     name: "Calculator",
     description:
@@ -204,28 +156,6 @@ export const projects = [
     image: calci,
     source_code_link: "https://github.com/GANGANATHEN/normalcalc",
     url: "https://ganganathan-calculator.netlify.app",
-  },
-  {
-    name: "Portfolio",
-    description:
-      "Interactive personal 3D developer portfolio showcasing full-stack skills, dynamic models, and responsive modern layouts.",
-    tags: [
-      {
-        name: "React",
-        color: "blue-text-gradient",
-      },
-      {
-        name: "ThreeJs",
-        color: "green-text-gradient",
-      },
-      {
-        name: "Tailwind",
-        color: "pink-text-gradient",
-      },
-    ],
-    image: ganganathan,
-    source_code_link: "https://github.com/GANGANATHEN/portfolio",
-    url: "https://ganganathan.vercel.app",
   },
   {
     name: "Social Link",
@@ -307,6 +237,54 @@ export const projects = [
     image: grade,
     source_code_link: "https://github.com/GANGANATHEN/Grade-Calculator",
     url: "https://ganganathangradecal.netlify.app",
+  },
+  {
+    name: "Portfolio",
+    description:
+      "Interactive personal 3D developer portfolio showcasing full-stack skills, dynamic models, and responsive modern layouts.",
+    tags: [
+      {
+        name: "React",
+        color: "blue-text-gradient",
+      },
+      {
+        name: "ThreeJs",
+        color: "green-text-gradient",
+      },
+      {
+        name: "Tailwind",
+        color: "pink-text-gradient",
+      },
+    ],
+    image: ganganathan,
+    source_code_link: "https://github.com/GANGANATHEN/portfolio",
+    url: "https://ganganathan.vercel.app",
+  },
+  {
+    name: "iPhone 15 Pro",
+    description:
+      "Interactive 3D Apple iPhone 15 Pro showcase website featuring realistic Three.js models, GSAP animations, and dynamic color styling.",
+    tags: [
+      {
+        name: "React",
+        color: "blue-text-gradient",
+      },
+      {
+        name: "ThreeJs",
+        color: "orange-text-gradient",
+      },
+      {
+        name: "Tailwind",
+        color: "pink-text-gradient",
+      },
+      {
+        name: "sentry",
+        color: "green-text-gradient",
+      },
+    ],
+    image: appleimg,
+    source_code_link: "https://github.com/GANGANATHEN/Project_React",
+    url: "https://ganganathan-pple.netlify.app",
   },
   {
     name: "ShaChat",

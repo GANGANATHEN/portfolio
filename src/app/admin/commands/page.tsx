@@ -75,9 +75,9 @@ export default function AdminCommandsPage() {
   }, []);
 
   // Fetch admin commands and stats
-  const fetchAdminCommands = useCallback(async () => {
+  const fetchAdminCommands = useCallback(async (showLoading = false) => {
     if (!isAuthenticated) return;
-    setLoading(true);
+    if (showLoading) setLoading(true);
     setError(null);
     try {
       const res = await fetch("/api/admin/commands");
@@ -99,14 +99,23 @@ export default function AdminCommandsPage() {
       console.error("[Admin Commands] Fetch error:", err);
       setError(err.message || "Unable to fetch commands from server.");
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [isAuthenticated]);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchAdminCommands();
-    }
+    if (!isAuthenticated) return;
+    let active = true;
+
+    fetchAdminCommands(true);
+    const interval = setInterval(() => {
+      if (active) fetchAdminCommands(false);
+    }, 4000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, [isAuthenticated, fetchAdminCommands]);
 
   // Handle Admin Login
@@ -470,7 +479,7 @@ export default function AdminCommandsPage() {
 
             <button
               type="button"
-              onClick={fetchAdminCommands}
+              onClick={() => fetchAdminCommands(true)}
               title="Refresh commands list"
               className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white transition-colors cursor-pointer"
             >
@@ -493,7 +502,7 @@ export default function AdminCommandsPage() {
             <p className="text-gray-400 text-xs sm:text-sm max-w-md">{error}</p>
             <button
               type="button"
-              onClick={fetchAdminCommands}
+              onClick={() => fetchAdminCommands(true)}
               className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white font-mono text-xs transition-colors cursor-pointer"
             >
               <RefreshCw className="w-3.5 h-3.5" />
