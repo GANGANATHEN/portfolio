@@ -10,7 +10,7 @@ import Hero from "@/components/Hero";
 import Navbar from "@/components/Navbar";
 import Tech from "@/components/Tech";
 import Works from "@/components/Works";
-import Feedbacks from "@/components/Feedbacks";
+import Commands from "@/components/Commands";
 
 export default function Home() {
   // Coordinated mutual-exclusion state for floating chat panels
@@ -55,7 +55,7 @@ export default function Home() {
         <Tech />
       </MultiShapeMorph>
       <Works />
-      <Feedbacks />
+      <Commands />
       {/* AI Assistant Chatbot */}
       <Chatbot
         isOpen={activeChat === "chatbot"}

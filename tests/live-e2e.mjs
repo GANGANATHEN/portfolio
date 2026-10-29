@@ -461,6 +461,146 @@ async function runE2E() {
   assert.ok(/name:\s*"ShaChat"[\s\S]*?source_code_link:\s*null/.test(constantsContent), "ShaChat source_code_link must be null (private repo)");
   console.log("✔ Project card private repository and deployment data validated");
 
+  console.log("\n=== 11. Testing Public Commands API & Submission ===");
+  // Public GET /api/commands
+  const pubCmdsRes = await fetch(`${BASE_URL}/api/commands`);
+  assert.equal(pubCmdsRes.status, 200, "Public GET /api/commands must return 200");
+  const pubCmdsData = await pubCmdsRes.json();
+  assert.equal(pubCmdsData.success, true);
+  assert.ok(Array.isArray(pubCmdsData.commands), "commands must be an array");
+  console.log("✔ Public commands endpoint active and accessible (%d commands found)", pubCmdsData.commands.length);
+
+  // Visitor submits a new command via POST /api/commands
+  const postCmdRes = await fetch(`${BASE_URL}/api/commands`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "X-Forwarded-For": "203.0.113.88",
+    },
+    body: JSON.stringify({
+      command: "git branch --merged | grep -v '\\*' | xargs -n 1 git branch -d",
+      author_name: "DevTester",
+      title: "Clean Merged Git Branches",
+      category: "Git",
+    }),
+  });
+  assert.equal(postCmdRes.status, 201, "Command submission must return HTTP 201 Created");
+  const postCmdData = await postCmdRes.json();
+  assert.equal(postCmdData.success, true);
+  assert.ok(postCmdData.command.id);
+  assert.equal(postCmdData.command.command, "git branch --merged | grep -v '\\*' | xargs -n 1 git branch -d");
+  assert.equal(postCmdData.command.author_name, "DevTester");
+  // STRICT PRIVACY CHECK: Verify client response does NOT leak server-side telemetry
+  assert.equal(postCmdData.command.metadata, undefined, "Public response must NEVER leak metadata object");
+  assert.equal(postCmdData.command.ip, undefined, "Public response must NEVER leak IP address");
+  assert.equal(postCmdData.command.userAgent, undefined, "Public response must NEVER leak User-Agent");
+  console.log("✔ Visitor command submitted successfully; private telemetry confirmed stripped from public response");
+
+  const testCmdId = postCmdData.command.id;
+
+  // Verify command appears in public GET /api/commands
+  const updatedPubCmdsRes = await fetch(`${BASE_URL}/api/commands`);
+  const updatedPubCmdsData = await updatedPubCmdsRes.json();
+  const newlyCreated = updatedPubCmdsData.commands.find((c) => c.id === testCmdId);
+  assert.ok(newlyCreated, "Newly created command must be visible in public listing");
+  assert.equal(newlyCreated.metadata, undefined, "Public list items must NEVER leak metadata");
+  console.log("✔ Newly submitted command confirmed visible in public listing");
+
+  console.log("\n=== 12. Testing Admin Commands Management & Telemetry Moderation ===");
+  // Test unauthorized access
+  const unauthAdminCmdRes = await fetch(`${BASE_URL}/api/admin/commands`);
+  assert.equal(unauthAdminCmdRes.status, 401, "Unauthorized GET /api/admin/commands must return 401");
+  console.log("✔ Security check passed: Unauthorized access to admin commands rejected with HTTP 401");
+
+  // Authorized Admin GET /api/admin/commands
+  const authAdminCmdRes = await fetch(`${BASE_URL}/api/admin/commands`, {
+    headers: { Cookie: adminCookie },
+  });
+  assert.equal(authAdminCmdRes.status, 200, "Authorized admin GET /api/admin/commands must return 200");
+  const adminCmdData = await authAdminCmdRes.json();
+  assert.equal(adminCmdData.success, true);
+  assert.ok(adminCmdData.stats, "Stats object must be returned to admin");
+  assert.ok(adminCmdData.stats.total >= 1);
+  const foundInAdmin = adminCmdData.commands.find((c) => c.id === testCmdId);
+  assert.ok(foundInAdmin, "Created command must exist in admin listing");
+  assert.ok(foundInAdmin.metadata, "Admin MUST have access to telemetry metadata");
+  assert.equal(foundInAdmin.metadata.deviceType, "desktop");
+  assert.equal(foundInAdmin.metadata.osFamily, "macOS");
+  assert.equal(foundInAdmin.metadata.browserFamily, "Chrome");
+  assert.equal(foundInAdmin.metadata.ip, "203.0.113.88");
+  console.log("✔ Admin successfully retrieved full command listing with device and IP metadata");
+
+  // Admin Hides command
+  const hideRes = await fetch(`${BASE_URL}/api/admin/commands`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: adminCookie,
+    },
+    body: JSON.stringify({ id: testCmdId, action: "hide" }),
+  });
+  assert.equal(hideRes.status, 200, "Admin hide action must return 200");
+  console.log("✔ Admin hid command successfully");
+
+  // Verify command disappeared from public GET /api/commands
+  const afterHidePubRes = await fetch(`${BASE_URL}/api/commands`);
+  const afterHidePubData = await afterHidePubRes.json();
+  assert.equal(
+    afterHidePubData.commands.some((c) => c.id === testCmdId),
+    false,
+    "Hidden command must NOT be returned in public API"
+  );
+  console.log("✔ Hidden command confirmed removed from public Commands section");
+
+  // Admin Restores command
+  const restoreRes = await fetch(`${BASE_URL}/api/admin/commands`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: adminCookie,
+    },
+    body: JSON.stringify({ id: testCmdId, action: "restore" }),
+  });
+  assert.equal(restoreRes.status, 200, "Admin restore action must return 200");
+  console.log("✔ Admin restored command successfully");
+
+  // Verify command reappeared in public GET /api/commands
+  const afterRestorePubRes = await fetch(`${BASE_URL}/api/commands`);
+  const afterRestorePubData = await afterRestorePubRes.json();
+  assert.ok(
+    afterRestorePubData.commands.some((c) => c.id === testCmdId),
+    "Restored command must reappear in public Commands section"
+  );
+  console.log("✔ Restored command confirmed back in public Commands section");
+
+  // Admin Deletes command
+  const deleteCmdRes = await fetch(`${BASE_URL}/api/admin/commands?id=${testCmdId}`, {
+    method: "DELETE",
+    headers: { Cookie: adminCookie },
+  });
+  assert.equal(deleteCmdRes.status, 200, "Admin delete action must return 200");
+  console.log("✔ Admin deleted command successfully");
+
+  // Verify deleted command is excluded from public listing
+  const afterDeletePubRes = await fetch(`${BASE_URL}/api/commands`);
+  const afterDeletePubData = await afterDeletePubRes.json();
+  assert.equal(
+    afterDeletePubData.commands.some((c) => c.id === testCmdId),
+    false,
+    "Deleted command must NOT be returned in public API"
+  );
+  console.log("✔ Deleted command confirmed excluded from public Commands section");
+
+  console.log("\n=== 13. Testing Admin Commands Dashboard Route & Projects Page Scroll ===");
+  const adminPageRes = await fetch(`${BASE_URL}/admin/commands`);
+  assert.equal(adminPageRes.status, 200, "/admin/commands route must return HTTP 200");
+  const freshHomeRes = await fetch(`${BASE_URL}/`);
+  const freshHomeHtml = await freshHomeRes.text();
+  assert.ok(freshHomeHtml.includes('id="commands"'), "Home page must include Commands section anchor");
+  assert.ok(freshHomeHtml.includes('Featured'), "Home page must include Featured Projects heading");
+  console.log("✔ /admin/commands and redesigned portfolio sections confirmed rendering properly");
+
   console.log("\n=======================================================");
   console.log("🎉 ALL E2E FUNCTIONAL, SECURITY, AND PRIVACY CHECKS PASSED!");
   console.log("=======================================================");

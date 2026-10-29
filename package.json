@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --import ./tests/register-loader.mjs --experimental-strip-types --test tests/security.test.mjs tests/notification-cooldown.test.mjs tests/otp-privacy-verification.test.mjs tests/advanced-chat.test.mjs",
+    "test": "node --import ./tests/register-loader.mjs --experimental-strip-types --test tests/security.test.mjs tests/notification-cooldown.test.mjs tests/otp-privacy-verification.test.mjs tests/advanced-chat.test.mjs tests/commands.test.mjs",
     "test:e2e": "node tests/live-e2e.mjs"
   },
   "dependencies": {
