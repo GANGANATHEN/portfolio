@@ -30,6 +30,9 @@ import {
   Maximize2,
   SlidersHorizontal,
   ChevronRight,
+  MoreVertical,
+  Pin,
+  PinOff,
 } from "lucide-react";
 import TelegramEmojiPicker from "@/components/LiveChat/TelegramEmojiPicker";
 
@@ -77,18 +80,56 @@ interface ConversationItem {
   unreadOwnerCount: number;
   latestMessage?: string;
   isArchived?: boolean;
+  isPinned?: boolean;
 }
 
 const QUICK_REACTIONS = ["👍", "❤️", "🔥", "🎉", "😂", "😮", "😢", "🙏"];
 
-export default function AdminInboxPage() {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+function getConversationIdFromUrl(initialId?: string): string | null {
+  if (initialId) return initialId;
+  if (typeof window === "undefined") return null;
+
+  // 1. Pathname: /admin/inbox/<id>
+  const pathMatch = window.location.pathname.match(/^\/admin\/inbox\/([^/?#]+)/);
+  if (pathMatch && pathMatch[1]) {
+    return decodeURIComponent(pathMatch[1]);
+  }
+
+  // 2. Hash: /admin/inbox/#<id>
+  const hash = window.location.hash.replace(/^#/, "").trim();
+  if (hash) {
+    return decodeURIComponent(hash);
+  }
+
+  // 3. Query param: ?conversationId=<id>
+  const queryParam = new URLSearchParams(window.location.search).get("conversationId");
+  if (queryParam) {
+    return queryParam.trim();
+  }
+
+  return null;
+}
+
+interface AdminInboxPageProps {
+  initialConversationId?: string;
+  initialAuthenticated?: boolean;
+}
+
+export default function AdminInboxPage({
+  initialConversationId,
+  initialAuthenticated,
+}: AdminInboxPageProps = {}) {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(
+    typeof initialAuthenticated === "boolean" ? initialAuthenticated : false
+  );
   const [passwordInput, setPasswordInput] = useState("");
   const [loginError, setLoginError] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
-  const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
+  const [selectedConvId, setSelectedConvId] = useState<string | null>(initialConversationId || null);
+  const [openMenuConvId, setOpenMenuConvId] = useState<string | null>(null);
+  const [convToDelete, setConvToDelete] = useState<ConversationItem | null>(null);
   const [activeMessages, setActiveMessages] = useState<MessageItem[]>([]);
   const [replyText, setReplyText] = useState("");
   const [isSendingReply, setIsSendingReply] = useState(false);
@@ -124,7 +165,7 @@ export default function AdminInboxPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Check auth and initial query params on load
+  // Check auth and initial path/hash/query params on load
   useEffect(() => {
     let active = true;
     const verifyAuth = async () => {
@@ -134,10 +175,9 @@ export default function AdminInboxPage() {
         if (active) {
           setIsAuthenticated(Boolean(data.authenticated));
           if (data.authenticated) {
-            const urlParams = new URLSearchParams(window.location.search);
-            const queryConvId = urlParams.get("conversationId");
-            if (queryConvId) {
-              setSelectedConvId(queryConvId);
+            const targetId = getConversationIdFromUrl(initialConversationId);
+            if (targetId) {
+              setSelectedConvId(targetId);
               setMobileView("chat");
             }
           }
@@ -150,7 +190,90 @@ export default function AdminInboxPage() {
     return () => {
       active = false;
     };
+  }, [initialConversationId]);
+
+  // Listen for browser Back and Forward navigation via hashchange & popstate
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const handleNavigationChange = () => {
+      const currentId = getConversationIdFromUrl();
+      if (currentId) {
+        setSelectedConvId((prev) => (prev === currentId ? prev : currentId));
+        setMobileView("chat");
+      } else {
+        // Returned to /admin/inbox without an id or hash
+        setSelectedConvId(null);
+        setActiveMessages([]);
+        setMobileView("list");
+      }
+    };
+
+    window.addEventListener("hashchange", handleNavigationChange);
+    window.addEventListener("popstate", handleNavigationChange);
+
+    return () => {
+      window.removeEventListener("hashchange", handleNavigationChange);
+      window.removeEventListener("popstate", handleNavigationChange);
+    };
+  }, [isAuthenticated]);
+
+  // Select a conversation and update URL hash/path without reloading page
+  const selectConversation = useCallback((convId: string) => {
+    const currentId = getConversationIdFromUrl();
+    if (selectedConvId === convId && currentId === convId) {
+      setMobileView("chat");
+      return;
+    }
+
+    const isPathRoute = typeof window !== "undefined" && window.location.pathname.startsWith("/admin/inbox/");
+    const targetUrl = isPathRoute
+      ? `/admin/inbox/${convId}${window.location.search}`
+      : `${window.location.pathname}${window.location.search}#${convId}`;
+
+    window.history.pushState({ convId }, "", targetUrl);
+    setSelectedConvId(convId);
+    setMobileView("chat");
+  }, [selectedConvId]);
+
+  // Mobile Back button returns to conversation list and clears path/hash
+  const handleMobileBack = useCallback(() => {
+    if (typeof window !== "undefined") {
+      if (window.location.pathname.startsWith("/admin/inbox/")) {
+        window.history.pushState(null, "", `/admin/inbox${window.location.search}`);
+      } else if (window.location.hash) {
+        window.history.pushState(null, "", `${window.location.pathname}${window.location.search}`);
+      }
+    }
+    setSelectedConvId(null);
+    setMobileView("list");
   }, []);
+
+  // Close 3-dot dropdown menu on click outside or Escape key
+  useEffect(() => {
+    if (!openMenuConvId) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-conversation-menu]")) {
+        setOpenMenuConvId(null);
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpenMenuConvId(null);
+      }
+    };
+
+    window.addEventListener("click", handleClickOutside);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("click", handleClickOutside);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openMenuConvId]);
 
   // Fetch conversation list
   const fetchConversations = useCallback(async () => {
@@ -164,9 +287,27 @@ export default function AdminInboxPage() {
         const data = await res.json();
         if (Array.isArray(data.conversations)) {
           setConversations(data.conversations);
+          const currentUrlId = getConversationIdFromUrl(initialConversationId);
           setSelectedConvId((prev) => {
-            if (prev && data.conversations.some((c: ConversationItem) => c.id === prev)) return prev;
-            return data.conversations.length > 0 ? data.conversations[0].id : null;
+            const targetId = prev || currentUrlId;
+            if (targetId) {
+              const exists = data.conversations.some((c: ConversationItem) => c.id === targetId);
+              if (exists) {
+                return targetId;
+              } else {
+                // If the selected conversation is deleted or no longer exists, clear the invalid selection and return to conversation list
+                if (typeof window !== "undefined") {
+                  if (window.location.pathname.startsWith("/admin/inbox/")) {
+                    window.history.replaceState(null, "", `/admin/inbox${window.location.search}`);
+                  } else if (window.location.hash) {
+                    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+                  }
+                }
+                setMobileView("list");
+                return null;
+              }
+            }
+            return null;
           });
         }
         setApiError("");
@@ -179,7 +320,7 @@ export default function AdminInboxPage() {
     } catch {
       setApiError("Connection error loading conversations.");
     }
-  }, [activeTab, searchQuery]);
+  }, [activeTab, searchQuery, initialConversationId]);
 
   // Polling conversations & messages
   useEffect(() => {
@@ -197,6 +338,20 @@ export default function AdminInboxPage() {
           const data = await res.json();
           if (Array.isArray(data.conversations)) {
             setConversations(data.conversations);
+            // Verify if active selection still exists
+            const currentUrlId = getConversationIdFromUrl(initialConversationId);
+            if (selectedConvId && !data.conversations.some((c: ConversationItem) => c.id === selectedConvId)) {
+              setSelectedConvId(null);
+              setActiveMessages([]);
+              setMobileView("list");
+              if (typeof window !== "undefined") {
+                if (window.location.pathname.startsWith("/admin/inbox/")) {
+                  window.history.replaceState(null, "", `/admin/inbox${window.location.search}`);
+                } else if (currentUrlId) {
+                  window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+                }
+              }
+            }
           }
         } else if (active && res.status === 401) {
           setIsAuthenticated(false);
@@ -223,7 +378,7 @@ export default function AdminInboxPage() {
       active = false;
       clearInterval(interval);
     };
-  }, [isAuthenticated, selectedConvId, activeTab, searchQuery]);
+  }, [isAuthenticated, selectedConvId, activeTab, searchQuery, initialConversationId]);
 
   // Load active conversation messages when selectedConvId changes
   useEffect(() => {
@@ -275,6 +430,11 @@ export default function AdminInboxPage() {
       if (res.ok && data.success) {
         setIsAuthenticated(true);
         setPasswordInput("");
+        const targetId = getConversationIdFromUrl(initialConversationId);
+        if (targetId) {
+          setSelectedConvId(targetId);
+          setMobileView("chat");
+        }
         fetchConversations();
       } else {
         setLoginError(data.error || "Invalid password.");
@@ -531,26 +691,86 @@ export default function AdminInboxPage() {
     }
   };
 
-  // Delete entire conversation
+  // Toggle Pin state on conversation (supports optimism and re-sorting)
+  const handleTogglePin = async (convId: string, currentPinStatus: boolean, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const nextPinStatus = !currentPinStatus;
+
+    // Optimistically update conversation pin state and sort
+    setConversations((prev) => {
+      const updated = prev.map((c) =>
+        c.id === convId ? { ...c, isPinned: nextPinStatus } : c
+      );
+      return updated.sort((a, b) => {
+        const aPinned = Boolean(a.isPinned);
+        const bPinned = Boolean(b.isPinned);
+        if (aPinned && !bPinned) return -1;
+        if (!aPinned && bPinned) return 1;
+        return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
+      });
+    });
+
+    try {
+      const res = await fetch("/api/admin/live-chat/conversations", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId: convId,
+          isPinned: nextPinStatus,
+        }),
+      });
+
+      if (!res.ok) {
+        // Rollback on server failure
+        fetchConversations();
+      }
+    } catch (err) {
+      console.warn("[Toggle Pin Error]:", err);
+      fetchConversations();
+    }
+  };
+
+  // Delete entire conversation (supports selected or targeted conversation from menu)
   const handleDeleteConversation = async () => {
-    if (!selectedConvId) return;
+    const targetId = convToDelete?.id || selectedConvId;
+    if (!targetId) return;
 
     try {
       const res = await fetch("/api/admin/live-chat/conversations", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId: selectedConvId }),
+        body: JSON.stringify({ conversationId: targetId }),
       });
 
       if (res.ok) {
         setDeleteConvModalOpen(false);
-        setSelectedConvId(null);
-        setActiveMessages([]);
+        const deletedId = targetId;
+        setConvToDelete(null);
+
+        // Optimistically remove from list
+        setConversations((prev) => prev.filter((c) => c.id !== deletedId));
+
+        // If the deleted conversation was the currently selected one, clear selection and URL hash
+        if (selectedConvId === deletedId) {
+          setSelectedConvId(null);
+          setActiveMessages([]);
+          setMobileView("list");
+          if (typeof window !== "undefined") {
+            window.history.replaceState(
+              null,
+              "",
+              `${window.location.pathname}${window.location.search}`
+            );
+          }
+        }
         fetchConversations();
-        setMobileView("list");
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        alert(errJson.error || "Failed to delete conversation.");
       }
     } catch (e) {
       console.warn("[Delete Conversation Error]:", e);
+      alert("Network error while deleting conversation.");
     }
   };
 
@@ -591,6 +811,156 @@ export default function AdminInboxPage() {
   };
 
   const activeConv = conversations.find((c) => c.id === selectedConvId);
+  const pinnedConversations = conversations.filter((c) => Boolean(c.isPinned));
+  const unpinnedConversations = conversations.filter((c) => !c.isPinned);
+
+  const renderConversationRow = (conv: ConversationItem) => {
+    const isSelected = conv.id === selectedConvId;
+    const timeString = new Date(conv.lastMessageAt).toLocaleDateString([], {
+      month: "short",
+      day: "numeric",
+    });
+
+    return (
+      <div
+        key={conv.id}
+        role="button"
+        tabIndex={0}
+        onClick={() => selectConversation(conv.id)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            selectConversation(conv.id);
+          }
+        }}
+        className={`p-3 transition-colors cursor-pointer flex gap-3 text-left group relative ${
+          isSelected
+            ? "bg-[#2b5278] text-white"
+            : "hover:bg-white/5 text-gray-300"
+        }`}
+      >
+        {/* Visitor Avatar */}
+        <div className="relative shrink-0">
+          <div className="w-10 h-10 rounded-full bg-linear-to-tr from-cyan-600 to-blue-600 flex items-center justify-center font-bold text-white text-xs shadow-sm">
+            {conv.visitorName.slice(0, 1).toUpperCase() || "V"}
+          </div>
+          {conv.emailVerified && (
+            <span
+              className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-[#17212b] flex items-center justify-center"
+              title="Verified Email"
+            >
+              <Check className="w-2 h-2 text-black stroke-[3]" />
+            </span>
+          )}
+        </div>
+
+        {/* Metadata & Last Message */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between mb-0.5">
+            <span className="font-semibold text-xs truncate flex items-center gap-1.5 text-white">
+              <span>{conv.visitorName || "Anonymous Visitor"}</span>
+              {conv.emailVerified && (
+                <ShieldCheck className="w-3 h-3 text-cyan-300 shrink-0" />
+              )}
+              {conv.isPinned && (
+                <span title="Pinned chat">
+                  <Pin className="w-3 h-3 text-cyan-400 rotate-45 shrink-0" />
+                </span>
+              )}
+            </span>
+            <span className="text-[10px] text-gray-400 font-mono shrink-0 ml-1">
+              {timeString}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between text-xs">
+            <p className="text-[11px] text-gray-400 truncate pr-2">
+              {conv.latestMessage || "No messages yet"}
+            </p>
+            {conv.unreadOwnerCount > 0 && (
+              <span className="bg-cyan-500 text-black text-[10px] font-bold px-1.5 py-0.2 rounded-full shrink-0 shadow-sm">
+                {conv.unreadOwnerCount}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Three-Dot Action Button & Dropdown Menu */}
+        <div className="relative shrink-0 flex items-center" data-conversation-menu>
+          <button
+            type="button"
+            aria-label={`Options for ${conv.visitorName}`}
+            aria-haspopup="menu"
+            aria-expanded={openMenuConvId === conv.id}
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpenMenuConvId((prev) => (prev === conv.id ? null : conv.id));
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.stopPropagation();
+                setOpenMenuConvId((prev) => (prev === conv.id ? null : conv.id));
+              }
+            }}
+            className={`p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer ${
+              openMenuConvId === conv.id
+                ? "opacity-100 bg-white/10 text-white"
+                : "opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100"
+            }`}
+            title="Conversation options"
+          >
+            <MoreVertical className="w-4 h-4" />
+          </button>
+
+          {/* Dropdown Menu */}
+          {openMenuConvId === conv.id && (
+            <div
+              role="menu"
+              aria-label="Conversation actions"
+              className="absolute right-0 top-8 z-40 w-40 bg-[#17212b] border border-white/15 rounded-xl shadow-2xl py-1 text-xs text-gray-200 animate-in fade-in zoom-in-95 duration-100 backdrop-blur-md"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={(e) => {
+                  setOpenMenuConvId(null);
+                  handleTogglePin(conv.id, Boolean(conv.isPinned), e);
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-white/10 text-left transition-colors cursor-pointer text-gray-200"
+              >
+                {conv.isPinned ? (
+                  <>
+                    <PinOff className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                    <span>Unpin chat</span>
+                  </>
+                ) : (
+                  <>
+                    <Pin className="w-3.5 h-3.5 text-cyan-400 rotate-45 shrink-0" />
+                    <span>Pin chat</span>
+                  </>
+                )}
+              </button>
+              <div className="my-1 border-t border-white/10" />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenMenuConvId(null);
+                  setConvToDelete(conv);
+                  setDeleteConvModalOpen(true);
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-red-400 hover:bg-red-500/20 text-left transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                <span>Delete chat</span>
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   // Unauthenticated Login Screen
   if (isAuthenticated === false) {
@@ -724,17 +1094,32 @@ export default function AdminInboxPage() {
 
       {/* Delete Entire Conversation Modal */}
       {deleteConvModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-[#17212b] border border-red-500/30 rounded-2xl p-5 w-full max-w-sm text-center space-y-3.5 shadow-2xl">
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => {
+            setDeleteConvModalOpen(false);
+            setConvToDelete(null);
+          }}
+        >
+          <div
+            className="bg-[#17212b] border border-red-500/30 rounded-2xl p-5 w-full max-w-sm text-center space-y-3.5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <Trash2 className="w-8 h-8 text-red-400 mx-auto" />
-            <h3 className="text-base font-bold text-white">Delete Entire Conversation?</h3>
+            <h3 className="text-base font-bold text-white">Delete Chat Conversation?</h3>
             <p className="text-xs text-gray-400 leading-relaxed">
-              This action will permanently delete this conversation and its message history from the active inbox.
+              {convToDelete
+                ? `Permanently delete the conversation with "${convToDelete.visitorName}" and all of its message history?`
+                : "Permanently delete this conversation and all of its message history?"}
+              {" "}This action cannot be undone.
             </p>
             <div className="flex justify-center gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setDeleteConvModalOpen(false)}
+                onClick={() => {
+                  setDeleteConvModalOpen(false);
+                  setConvToDelete(null);
+                }}
                 className="px-3.5 py-1.5 rounded-xl text-gray-400 hover:text-white text-xs cursor-pointer"
               >
                 Cancel
@@ -896,77 +1281,27 @@ export default function AdminInboxPage() {
                 </p>
               </div>
             ) : (
-              conversations.map((conv) => {
-                const isSelected = conv.id === selectedConvId;
-                const timeString = new Date(conv.lastMessageAt).toLocaleDateString([], {
-                  month: "short",
-                  day: "numeric",
-                });
-
-                return (
-                  <div
-                    key={conv.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => {
-                      setSelectedConvId(conv.id);
-                      setMobileView("chat");
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        setSelectedConvId(conv.id);
-                        setMobileView("chat");
-                      }
-                    }}
-                    className={`p-3 transition-colors cursor-pointer flex gap-3 text-left ${
-                      isSelected
-                        ? "bg-[#2b5278] text-white"
-                        : "hover:bg-white/5 text-gray-300"
-                    }`}
-                  >
-                    {/* Visitor Avatar */}
-                    <div className="relative shrink-0">
-                      <div className="w-10 h-10 rounded-full bg-linear-to-tr from-cyan-600 to-blue-600 flex items-center justify-center font-bold text-white text-xs shadow-sm">
-                        {conv.visitorName.slice(0, 1).toUpperCase() || "V"}
-                      </div>
-                      {conv.emailVerified && (
-                        <span
-                          className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-[#17212b] flex items-center justify-center"
-                          title="Verified Email"
-                        >
-                          <Check className="w-2 h-2 text-black stroke-[3]" />
-                        </span>
-                      )}
+              <>
+                {/* Pinned section at the top if any pinned conversations exist */}
+                {pinnedConversations.length > 0 && (
+                  <div className="space-y-0.5">
+                    <div className="px-3 pt-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5 select-none bg-white/[0.02]">
+                      <Pin className="w-2.5 h-2.5 rotate-45" />
+                      <span>Pinned Chats ({pinnedConversations.length})</span>
                     </div>
-
-                    {/* Metadata & Last Message */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-0.5">
-                        <span className="font-semibold text-xs truncate flex items-center gap-1 text-white">
-                          <span>{conv.visitorName || "Anonymous Visitor"}</span>
-                          {conv.emailVerified && (
-                            <ShieldCheck className="w-3 h-3 text-cyan-300 shrink-0" />
-                          )}
-                        </span>
-                        <span className="text-[10px] text-gray-400 font-mono shrink-0 ml-1">
-                          {timeString}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between text-xs">
-                        <p className="text-[11px] text-gray-400 truncate pr-2">
-                          {conv.latestMessage || "No messages yet"}
-                        </p>
-                        {conv.unreadOwnerCount > 0 && (
-                          <span className="bg-cyan-500 text-black text-[10px] font-bold px-1.5 py-0.2 rounded-full shrink-0 shadow-sm">
-                            {conv.unreadOwnerCount}
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                    {pinnedConversations.map((conv) => renderConversationRow(conv))}
                   </div>
-                );
-              })
+                )}
+
+                {/* Unpinned section */}
+                {pinnedConversations.length > 0 && unpinnedConversations.length > 0 && (
+                  <div className="px-3 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 select-none bg-white/[0.02] border-t border-white/5 mt-1">
+                    <span>All Conversations ({unpinnedConversations.length})</span>
+                  </div>
+                )}
+
+                {unpinnedConversations.map((conv) => renderConversationRow(conv))}
+              </>
             )}
           </div>
         </aside>
@@ -985,7 +1320,7 @@ export default function AdminInboxPage() {
                   {/* Mobile Back to List Button */}
                   <button
                     type="button"
-                    onClick={() => setMobileView("list")}
+                    onClick={handleMobileBack}
                     className="md:hidden p-1.5 rounded-lg text-gray-400 hover:text-white cursor-pointer"
                     title="Back to conversation list"
                   >
@@ -1039,6 +1374,24 @@ export default function AdminInboxPage() {
                     <span className="hidden lg:inline text-[11px] font-mono">PDF Export</span>
                   </button>
 
+                  {/* Pin / Unpin Toggle */}
+                  <button
+                    type="button"
+                    onClick={(e) => handleTogglePin(activeConv.id, Boolean(activeConv.isPinned), e)}
+                    className={`p-2 rounded-lg transition-colors cursor-pointer ${
+                      activeConv.isPinned
+                        ? "text-cyan-400 bg-cyan-500/10"
+                        : "text-gray-400 hover:text-white hover:bg-white/5"
+                    }`}
+                    title={activeConv.isPinned ? "Unpin Conversation" : "Pin Conversation"}
+                  >
+                    {activeConv.isPinned ? (
+                      <PinOff className="w-4 h-4" />
+                    ) : (
+                      <Pin className="w-4 h-4 rotate-45" />
+                    )}
+                  </button>
+
                   {/* Archive Toggle */}
                   <button
                     type="button"
@@ -1056,7 +1409,10 @@ export default function AdminInboxPage() {
                   {/* Delete Conversation */}
                   <button
                     type="button"
-                    onClick={() => setDeleteConvModalOpen(true)}
+                    onClick={() => {
+                      setConvToDelete(activeConv);
+                      setDeleteConvModalOpen(true);
+                    }}
                     className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-white/5 transition-colors cursor-pointer"
                     title="Delete Conversation"
                   >
@@ -1674,6 +2030,27 @@ export default function AdminInboxPage() {
 
               <button
                 type="button"
+                onClick={(e) => handleTogglePin(activeConv.id, Boolean(activeConv.isPinned), e)}
+                className="w-full bg-[#0e1621] hover:bg-white/5 border border-white/10 text-gray-300 font-medium py-2 px-3 rounded-xl text-xs transition-colors flex items-center justify-between cursor-pointer"
+              >
+                <span className="flex items-center gap-2">
+                  {activeConv.isPinned ? (
+                    <>
+                      <PinOff className="w-4 h-4 text-cyan-400" />
+                      <span>Unpin Conversation</span>
+                    </>
+                  ) : (
+                    <>
+                      <Pin className="w-4 h-4 text-cyan-400 rotate-45" />
+                      <span>Pin Conversation</span>
+                    </>
+                  )}
+                </span>
+                <ChevronRight className="w-3.5 h-3.5 opacity-60" />
+              </button>
+
+              <button
+                type="button"
                 onClick={handleToggleArchive}
                 className="w-full bg-[#0e1621] hover:bg-white/5 border border-white/10 text-gray-300 font-medium py-2 px-3 rounded-xl text-xs transition-colors flex items-center justify-between cursor-pointer"
               >
@@ -1686,7 +2063,10 @@ export default function AdminInboxPage() {
 
               <button
                 type="button"
-                onClick={() => setDeleteConvModalOpen(true)}
+                onClick={() => {
+                  setConvToDelete(activeConv);
+                  setDeleteConvModalOpen(true);
+                }}
                 className="w-full bg-red-950/20 hover:bg-red-900/30 border border-red-800/40 text-red-300 font-medium py-2 px-3 rounded-xl text-xs transition-colors flex items-center justify-between cursor-pointer"
               >
                 <span className="flex items-center gap-2">

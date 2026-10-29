@@ -18,6 +18,7 @@ import {
   getAttachmentById,
   archiveConversationByAdmin,
   deleteConversationByAdmin,
+  pinConversationByAdmin,
   getAllConversationsForAdmin,
   getFullConversationHistoryForPdf,
 } from "../src/lib/live-chat/db.ts";
@@ -252,5 +253,43 @@ test("Advanced Live Chat: Editing, Deletion, Reactions, Attachments, and PDF Exp
     // Verify PDF header magic bytes
     assert.equal(pdfBuffer.subarray(0, 5).toString("utf-8"), "%PDF-", "Generated document must have valid PDF magic bytes");
     assert.ok(pdfBuffer.length > 500, "PDF buffer must have substantive content");
+  });
+
+  // 8. Admin Pin / Unpin and Pinned Sorting
+  await t.test("8. Admin can pin and unpin conversations with persistent priority sorting", async () => {
+    const tokenX = generateSecureToken();
+    const convX = await getOrCreateConversationByHash(hashToken(tokenX), "Visitor X");
+
+    const tokenY = generateSecureToken();
+    const convY = await getOrCreateConversationByHash(hashToken(tokenY), "Visitor Y");
+
+    // Initially neither is pinned
+    assert.equal(convX.isPinned, false);
+    assert.equal(convY.isPinned, false);
+
+    // Pin Conversation Y
+    const pinSuccess = await pinConversationByAdmin(convY.id, true);
+    assert.equal(pinSuccess, true, "pinConversationByAdmin should succeed");
+
+    // Fetch conversation list for admin
+    const listAfterPin = await getAllConversationsForAdmin({ status: "all" });
+    const foundY = listAfterPin.find((c) => c.id === convY.id);
+    const foundX = listAfterPin.find((c) => c.id === convX.id);
+    assert.ok(foundY);
+    assert.ok(foundX);
+    assert.equal(foundY?.isPinned, true, "Conversation Y must be marked as pinned");
+    assert.equal(foundX?.isPinned, false, "Conversation X must remain unpinned");
+
+    // Verify Conversation Y appears before unpinned conversations in the sorted list
+    const yIndex = listAfterPin.findIndex((c) => c.id === convY.id);
+    const xIndex = listAfterPin.findIndex((c) => c.id === convX.id);
+    assert.ok(yIndex < xIndex, "Pinned conversation Y must appear before unpinned conversation X");
+
+    // Unpin Conversation Y
+    const unpinSuccess = await pinConversationByAdmin(convY.id, false);
+    assert.equal(unpinSuccess, true, "Unpinning should succeed");
+    const listAfterUnpin = await getAllConversationsForAdmin({ status: "all" });
+    const unpinnedY = listAfterUnpin.find((c) => c.id === convY.id);
+    assert.equal(unpinnedY?.isPinned, false, "Conversation Y must now be unpinned");
   });
 });

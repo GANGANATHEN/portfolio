@@ -199,7 +199,7 @@ export const projects = [
       },
     ],
     image: calci,
-    source_code_link: "https://github.com/GREENGANGA/normalcalc",
+    source_code_link: "https://github.com/GANGANATHEN/normalcalc",
     url: "https://ganganathan-calculator.netlify.app",
   },
   {
@@ -221,8 +221,8 @@ export const projects = [
       },
     ],
     image: ganganathan,
-    source_code_link: "https://github.com/GREENGANGA/ReactJs-Portfolio",
-    url: "https://ganganathan.netlify.app",
+    source_code_link: "https://github.com/GANGANATHEN/portfolio",
+    url: "https://ganganathan.vercel.app",
   },
   {
     name: "Social Link",
@@ -258,7 +258,7 @@ export const projects = [
       },
     ],
     image: qrcode,
-    source_code_link: "https://github.com/GREENGANGA/qr-code-component-main",
+    source_code_link: "https://github.com/GANGANATHEN/qr-code-component-main",
     url: "https://ganganathan-qr-code-componant.netlify.app/",
   },
   {
@@ -303,6 +303,28 @@ export const projects = [
     ],
     image: grade,
     source_code_link: "https://github.com/GANGANATHEN/Grade-Calculator",
+    url: "https://ganganathangradecal.netlify.app",
+  },
+  {
+    name: "ShaChat",
+    description:
+      "Academic GPA and semester grade calculation application with instant score weighting and breakdown.",
+    tags: [
+      {
+        name: "HTML",
+        color: "blue-text-gradient",
+      },
+      {
+        name: "CSS",
+        color: "orange-text-gradient",
+      },
+      {
+        name: "JavaScript",
+        color: "pink-text-gradient",
+      },
+    ],
+    image: grade,
+    source_code_link: null,
     url: "https://ganganathangradecal.netlify.app",
   },
 ];

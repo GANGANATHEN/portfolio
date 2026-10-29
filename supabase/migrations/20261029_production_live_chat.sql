@@ -22,7 +22,9 @@ CREATE TABLE IF NOT EXISTS public.chat_conversations (
     last_owner_notification_at TIMESTAMPTZ NULL,
     last_visitor_notification_at TIMESTAMPTZ NULL,
     is_archived BOOLEAN NOT NULL DEFAULT FALSE,
-    is_deleted BOOLEAN NOT NULL DEFAULT FALSE
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    is_pinned BOOLEAN NOT NULL DEFAULT FALSE,
+    pinned_at TIMESTAMPTZ NULL
 );
 
 -- Ensure all columns exist if table was partially created
@@ -37,11 +39,18 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'chat_conversations' AND column_name = 'is_deleted') THEN
         ALTER TABLE public.chat_conversations ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT FALSE;
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'chat_conversations' AND column_name = 'is_pinned') THEN
+        ALTER TABLE public.chat_conversations ADD COLUMN is_pinned BOOLEAN NOT NULL DEFAULT FALSE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'chat_conversations' AND column_name = 'pinned_at') THEN
+        ALTER TABLE public.chat_conversations ADD COLUMN pinned_at TIMESTAMPTZ NULL;
+    END IF;
 END $$;
 
 CREATE INDEX IF NOT EXISTS idx_chat_conversations_hash ON public.chat_conversations(session_token_hash);
 CREATE INDEX IF NOT EXISTS idx_chat_conversations_last_msg ON public.chat_conversations(last_message_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_conversations_unread ON public.chat_conversations(unread_owner_count);
+CREATE INDEX IF NOT EXISTS idx_chat_conversations_pinned ON public.chat_conversations(is_pinned, last_message_at DESC);
 
 -- 2. MESSAGES TABLE
 CREATE TABLE IF NOT EXISTS public.chat_messages (

@@ -48,6 +48,8 @@ export interface Conversation {
   lastVisitorNotificationAt?: string | null;
   isArchived?: boolean;
   isDeleted?: boolean;
+  isPinned?: boolean;
+  pinnedAt?: string | null;
 }
 
 export interface NotificationLog {

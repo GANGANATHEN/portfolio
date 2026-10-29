@@ -66,7 +66,7 @@ export function getValidatedSiteUrl(): string {
   } catch {
     // Fallback
   }
-  return "https://ganganathan.dev";
+  return "https://ganganathan.vercel.app";
 }
 
 function getSanitizedFromEmail(): string {
@@ -225,7 +225,7 @@ export async function sendOtpVerificationEmail(to: string, otp: string): Promise
 /**
  * Notify Portfolio Owner of a new visitor message
  * - Generates clickable admin inbox link opening the exact conversation:
- *   ${siteUrl}/admin/inbox?conversationId=${conversation.id}
+ *   ${siteUrl}/admin/inbox/${conversation.id}
  * - Access strictly requires an authenticated admin session.
  * - Cooldown is strictly independent per conversation.
  */
@@ -252,9 +252,9 @@ export async function notifyOwnerOfNewMessage(
     return { status: "throttled" };
   }
 
-  // 2. Lock claimed: generate safe admin conversation link
+  // 2. Lock claimed: generate safe admin direct conversation link (/admin/inbox/<conversationId>)
   const siteUrl = getValidatedSiteUrl();
-  const inboxLink = `${siteUrl}/admin/inbox?conversationId=${encodeURIComponent(conversation.id)}`;
+  const inboxLink = `${siteUrl}/admin/inbox/${encodeURIComponent(conversation.id)}`;
   const visitorDisplay = conversation.visitorName || "A visitor";
   const verifiedBadge = conversation.emailVerified
     ? `<span style="background: #14532d; color: #86efac; padding: 2px 8px; border-radius: 9999px; font-size: 10px; font-weight: bold; margin-left: 6px;">Verified Email</span>`

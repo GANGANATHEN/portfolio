@@ -4,6 +4,7 @@ import {
   getAllConversationsForAdmin,
   deleteConversationByAdmin,
   archiveConversationByAdmin,
+  pinConversationByAdmin,
   DatabaseUnavailableError,
 } from "@/lib/live-chat/db";
 
@@ -40,6 +41,7 @@ export async function GET(req: NextRequest) {
         unreadOwnerCount: c.unreadOwnerCount,
         latestMessage: c.latestMessage,
         isArchived: Boolean(c.isArchived),
+        isPinned: Boolean(c.isPinned),
       })),
     });
   } catch (error) {
@@ -101,22 +103,43 @@ export async function PATCH(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => null);
-    if (!body || typeof body.conversationId !== "string" || typeof body.archive !== "boolean") {
+    if (!body || typeof body.conversationId !== "string") {
       return NextResponse.json(
-        { error: "Invalid archive payload." },
+        { error: "Invalid request payload. 'conversationId' is required." },
         { status: 400 },
       );
     }
 
-    const success = await archiveConversationByAdmin(body.conversationId, body.archive);
-    if (!success) {
-      return NextResponse.json(
-        { error: "Conversation not found." },
-        { status: 404 },
-      );
+    // Support Pin / Unpin
+    if (typeof body.pin === "boolean" || typeof body.isPinned === "boolean") {
+      const pinState = typeof body.pin === "boolean" ? body.pin : Boolean(body.isPinned);
+      const success = await pinConversationByAdmin(body.conversationId, pinState);
+      if (!success) {
+        return NextResponse.json(
+          { error: "Conversation not found." },
+          { status: 404 },
+        );
+      }
+      return NextResponse.json({ success: true, isPinned: pinState });
     }
 
-    return NextResponse.json({ success: true, isArchived: body.archive });
+    // Support Archive / Unarchive
+    if (typeof body.archive === "boolean" || typeof body.isArchived === "boolean") {
+      const archiveState = typeof body.archive === "boolean" ? body.archive : Boolean(body.isArchived);
+      const success = await archiveConversationByAdmin(body.conversationId, archiveState);
+      if (!success) {
+        return NextResponse.json(
+          { error: "Conversation not found." },
+          { status: 404 },
+        );
+      }
+      return NextResponse.json({ success: true, isArchived: archiveState });
+    }
+
+    return NextResponse.json(
+      { error: "Missing required 'pin' or 'archive' boolean parameter." },
+      { status: 400 },
+    );
   } catch (error) {
     console.error("[Admin Conversations PATCH Error]:", error);
     return NextResponse.json(

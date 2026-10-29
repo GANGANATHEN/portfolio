@@ -41,7 +41,7 @@ export const metadata: Metadata = {
   authors: [{ name: "Ganganathan" }],
   creator: "Ganganathan",
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL || "https://ganganathan.dev",
+    process.env.NEXT_PUBLIC_SITE_URL || "https://ganganathan.vercel.app",
   ),
   alternates: {
     canonical: "/",

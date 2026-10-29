@@ -98,16 +98,17 @@ async function runE2E() {
   assert.equal(badOtpReq.status, 400, "Invalid email format must be rejected");
 
   // Request OTP for valid email
+  const testEmail = `visitor.${Date.now()}@example.com`;
   const validOtpReq = await fetch(`${BASE_URL}/api/live-chat/otp/request`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Cookie: v1Cookie,
     },
-    body: JSON.stringify({ email: "e2e.test.visitor@example.com" }),
+    body: JSON.stringify({ email: testEmail }),
   });
-  assert.equal(validOtpReq.status, 200, "Valid OTP request should return 200");
   const otpReqData = await validOtpReq.json();
+  assert.equal(validOtpReq.status, 200, "Valid OTP request should return 200");
   assert.equal(otpReqData.success, true);
   assert.equal(otpReqData.otp, undefined, "OTP MUST NEVER be returned in response JSON");
   console.log("✔ OTP request endpoint successfully dispatched code without leaking OTP");
@@ -119,7 +120,7 @@ async function runE2E() {
       "Content-Type": "application/json",
       Cookie: v1Cookie,
     },
-    body: JSON.stringify({ email: "e2e.test.visitor@example.com" }),
+    body: JSON.stringify({ email: testEmail }),
   });
   assert.equal(rapidOtpReq.status, 429, "Rapid second OTP request must be throttled with HTTP 429");
   console.log("✔ OTP resend cooldown (60s) enforced successfully (HTTP 429)");
@@ -132,7 +133,7 @@ async function runE2E() {
       Cookie: v1Cookie,
     },
     body: JSON.stringify({
-      email: "e2e.test.visitor@example.com",
+      email: testEmail,
       otp: "000000",
     }),
   });
@@ -291,6 +292,102 @@ async function runE2E() {
   const pdfHeader = Buffer.from(pdfBuffer.slice(0, 5)).toString("utf-8");
   assert.equal(pdfHeader, "%PDF-", "Exported document must start with valid PDF header");
   console.log("✔ Full conversation PDF export verified (%d bytes generated)", pdfBuffer.byteLength);
+
+  console.log("\n=== 7. Testing Admin Pinning and Conversation Deletion Actions ===");
+  // Pin Conversation
+  const pinRes = await fetch(`${BASE_URL}/api/admin/live-chat/conversations`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: adminCookie,
+    },
+    body: JSON.stringify({
+      conversationId: v1Conv.id,
+      isPinned: true,
+    }),
+  });
+  assert.equal(pinRes.status, 200, "Pin request should return HTTP 200");
+  const pinData = await pinRes.json();
+  assert.equal(pinData.isPinned, true, "Pin response must confirm isPinned: true");
+  console.log("✔ Admin pinned conversation successfully");
+
+  // Verify conversation is returned as pinned in GET list
+  const convsAfterPinRes = await fetch(`${BASE_URL}/api/admin/live-chat/conversations`, {
+    headers: { Cookie: adminCookie },
+  });
+  assert.equal(convsAfterPinRes.status, 200);
+  const convsAfterPinData = await convsAfterPinRes.json();
+  const targetConvInList = convsAfterPinData.conversations.find((c) => c.id === v1Conv.id);
+  assert.ok(targetConvInList);
+  assert.equal(targetConvInList.isPinned, true, "Conversation must have isPinned: true in list");
+  assert.equal(convsAfterPinData.conversations[0].id, v1Conv.id, "Pinned conversation must appear first in list");
+  console.log("✔ Verified pinned conversation appears at top of admin inbox");
+
+  // Unpin Conversation
+  const unpinRes = await fetch(`${BASE_URL}/api/admin/live-chat/conversations`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: adminCookie,
+    },
+    body: JSON.stringify({
+      conversationId: v1Conv.id,
+      isPinned: false,
+    }),
+  });
+  assert.equal(unpinRes.status, 200);
+  const unpinData = await unpinRes.json();
+  assert.equal(unpinData.isPinned, false);
+  console.log("✔ Admin unpinned conversation successfully");
+
+  // Delete Conversation
+  const deleteRes = await fetch(`${BASE_URL}/api/admin/live-chat/conversations`, {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: adminCookie,
+    },
+    body: JSON.stringify({
+      conversationId: v1Conv.id,
+    }),
+  });
+  assert.equal(deleteRes.status, 200, "Delete request should return HTTP 200");
+  const deleteData = await deleteRes.json();
+  assert.equal(deleteData.success, true);
+  console.log("✔ Admin deleted conversation successfully");
+
+  // Verify conversation is no longer present in conversation list
+  const convsAfterDeleteRes = await fetch(`${BASE_URL}/api/admin/live-chat/conversations`, {
+    headers: { Cookie: adminCookie },
+  });
+  const convsAfterDeleteData = await convsAfterDeleteRes.json();
+  const deletedStillPresent = convsAfterDeleteData.conversations.some((c) => c.id === v1Conv.id);
+  assert.equal(deletedStillPresent, false, "Deleted conversation must no longer appear in active list");
+  console.log("✔ Verified deleted conversation is removed from inbox");
+
+  console.log("\n=== 8. Testing Direct Email Notification Link & Route (/admin/inbox/<id>) ===");
+  const testConvId = "test-conv-e2e-direct-id";
+  // Unauthenticated direct link navigation
+  const directUnauthRes = await fetch(`${BASE_URL}/admin/inbox/${testConvId}`);
+  assert.equal(directUnauthRes.status, 200, "Direct conversation URL must return 200");
+  const directUnauthHtml = await directUnauthRes.text();
+  assert.ok(
+    directUnauthHtml.includes("Admin Live Inbox") || directUnauthHtml.includes("Admin Access Password"),
+    "Unauthenticated visitor to /admin/inbox/<id> must receive login screen",
+  );
+  console.log("✔ Direct navigation to /admin/inbox/<id> without auth renders login screen");
+
+  // Authenticated direct link navigation
+  const directAuthRes = await fetch(`${BASE_URL}/admin/inbox/${testConvId}`, {
+    headers: { Cookie: adminCookie },
+  });
+  assert.equal(directAuthRes.status, 200, "Authenticated direct conversation URL must return 200");
+  const directAuthHtml = await directAuthRes.text();
+  assert.ok(
+    directAuthHtml.includes("Ganganathan") || directAuthHtml.includes("Admin Live Inbox"),
+    "Authenticated admin receives live inbox page",
+  );
+  console.log("✔ Direct navigation to /admin/inbox/<id> with auth returns HTTP 200");
 
   console.log("\n=======================================================");
   console.log("🎉 ALL E2E FUNCTIONAL, SECURITY, AND PRIVACY CHECKS PASSED!");

@@ -167,6 +167,8 @@ function mapSupabaseConversation(data: Record<string, unknown>): Conversation {
     lastVisitorNotificationAt: data.last_visitor_notification_at ? String(data.last_visitor_notification_at) : null,
     isArchived: Boolean(data.is_archived),
     isDeleted: Boolean(data.is_deleted),
+    isPinned: Boolean(data.is_pinned),
+    pinnedAt: data.pinned_at ? String(data.pinned_at) : null,
   };
 }
 
@@ -245,6 +247,8 @@ export async function getOrCreateConversationByHash(
       unreadVisitorCount: 0,
       isArchived: false,
       isDeleted: false,
+      isPinned: false,
+      pinnedAt: null,
     };
 
     localStore.conversations[newId] = conv;
@@ -467,7 +471,7 @@ export async function createEmailOtp(
   if (isSupabaseReady) {
     try {
       const serverClient = getServerSupabase();
-      await serverClient.from("chat_email_otps").insert([
+      const { error } = await serverClient.from("chat_email_otps").insert([
         {
           id: record.id,
           conversation_id: record.conversationId,
@@ -480,7 +484,12 @@ export async function createEmailOtp(
           used_at: null,
         },
       ]);
-      return record;
+      if (!error) {
+        return record;
+      }
+      if (shouldEnforceProductionPersistence()) {
+        throw new DatabaseUnavailableError(`Supabase chat_email_otps insert failed: ${error.message}`);
+      }
     } catch (e) {
       if (shouldEnforceProductionPersistence()) throw e;
     }
@@ -528,7 +537,14 @@ export async function getLatestEmailOtp(
           usedAt: data.used_at,
         };
       }
-      return null;
+
+      if (!error) {
+        return null;
+      }
+
+      if (shouldEnforceProductionPersistence()) {
+        throw new DatabaseUnavailableError(`Supabase chat_email_otps query failed: ${error.message}`);
+      }
     } catch (e) {
       if (shouldEnforceProductionPersistence()) throw e;
     }
@@ -555,12 +571,17 @@ export async function incrementOtpAttempts(otpId: string): Promise<number> {
         .single();
 
       const newAttempts = (current?.attempts || 0) + 1;
-      await serverClient
+      const { error } = await serverClient
         .from("chat_email_otps")
         .update({ attempts: newAttempts })
         .eq("id", otpId);
 
-      return newAttempts;
+      if (!error) {
+        return newAttempts;
+      }
+      if (shouldEnforceProductionPersistence()) {
+        throw new DatabaseUnavailableError(`Supabase incrementOtpAttempts failed: ${error.message}`);
+      }
     } catch (e) {
       if (shouldEnforceProductionPersistence()) throw e;
     }
@@ -586,11 +607,16 @@ export async function markOtpUsed(otpId: string): Promise<void> {
   if (isSupabaseReady) {
     try {
       const serverClient = getServerSupabase();
-      await serverClient
+      const { error } = await serverClient
         .from("chat_email_otps")
         .update({ used_at: now })
         .eq("id", otpId);
-      return;
+      if (!error) {
+        return;
+      }
+      if (shouldEnforceProductionPersistence()) {
+        throw new DatabaseUnavailableError(`Supabase markOtpUsed failed: ${error.message}`);
+      }
     } catch (e) {
       if (shouldEnforceProductionPersistence()) throw e;
     }
@@ -1289,7 +1315,19 @@ export async function deleteConversationByAdmin(conversationId: string): Promise
         .delete()
         .eq("id", conversationId);
 
-      return !error;
+      if (!error) {
+        runWithLock(() => {
+          delete localStore.conversations[conversationId];
+          delete localStore.messages[conversationId];
+          delete localStore.emailOtps[conversationId];
+          persistStoreToDisk();
+        });
+        return true;
+      }
+      if (shouldEnforceProductionPersistence()) {
+        throw new DatabaseUnavailableError(`Supabase chat_conversations delete failed: ${error.message}`);
+      }
+      console.warn("[Live Chat DB] Error deleting conversation in Supabase, using durable storage:", error.message);
     } catch (e) {
       if (shouldEnforceProductionPersistence()) throw e;
     }
@@ -1325,7 +1363,13 @@ export async function archiveConversationByAdmin(
         .update({ is_archived: isArchived, updated_at: new Date().toISOString() })
         .eq("id", conversationId);
 
-      return !error;
+      if (!error) {
+        return true;
+      }
+      if (shouldEnforceProductionPersistence()) {
+        throw new DatabaseUnavailableError(`Supabase chat_conversations archive failed: ${error.message}`);
+      }
+      console.warn("[Live Chat DB] Error archiving conversation in Supabase, using durable storage:", error.message);
     } catch (e) {
       if (shouldEnforceProductionPersistence()) throw e;
     }
@@ -1340,6 +1384,71 @@ export async function archiveConversationByAdmin(
     persistStoreToDisk();
     return true;
   });
+}
+
+export async function pinConversationByAdmin(
+  conversationId: string,
+  isPinned: boolean,
+): Promise<boolean> {
+  const now = new Date().toISOString();
+
+  // Always update local store so pin state persists locally across restarts
+  runWithLock(() => {
+    let conv = localStore.conversations[conversationId];
+    if (!conv) {
+      conv = {
+        id: conversationId,
+        sessionTokenHash: "",
+        visitorName: "Visitor",
+        visitorEmail: null,
+        emailVerified: false,
+        emailNotificationsEnabled: false,
+        createdAt: now,
+        updatedAt: now,
+        lastMessageAt: now,
+        unreadOwnerCount: 0,
+        unreadVisitorCount: 0,
+        isArchived: false,
+        isDeleted: false,
+        isPinned: isPinned,
+        pinnedAt: isPinned ? now : null,
+      };
+      localStore.conversations[conversationId] = conv;
+    } else {
+      conv.isPinned = isPinned;
+      conv.pinnedAt = isPinned ? now : null;
+      conv.updatedAt = now;
+    }
+    persistStoreToDisk();
+  });
+
+  const isSupabaseReady = await checkSupabaseAvailable();
+
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      const { error } = await serverClient
+        .from("chat_conversations")
+        .update({
+          is_pinned: isPinned,
+          pinned_at: isPinned ? now : null,
+          updated_at: now,
+        })
+        .eq("id", conversationId);
+
+      if (!error) {
+        return true;
+      }
+      if (shouldEnforceProductionPersistence()) {
+        throw new DatabaseUnavailableError(`Supabase chat_conversations pin failed: ${error.message}`);
+      }
+      console.warn("[Live Chat DB] Error pinning conversation in Supabase, using durable storage:", error.message);
+    } catch (e) {
+      if (shouldEnforceProductionPersistence()) throw e;
+    }
+  }
+
+  return true;
 }
 
 export async function getAllConversationsForAdmin(filter?: {
@@ -1370,6 +1479,13 @@ export async function getAllConversationsForAdmin(filter?: {
             (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
           );
           const mapped = mapSupabaseConversation(d);
+          if (d.is_pinned === undefined || d.is_pinned === null) {
+            const localRecord = localStore.conversations[String(d.id)];
+            if (localRecord && typeof localRecord.isPinned === "boolean") {
+              mapped.isPinned = localRecord.isPinned;
+              mapped.pinnedAt = localRecord.pinnedAt || null;
+            }
+          }
           const latest = sorted[0];
           return {
             ...mapped,
@@ -1442,7 +1558,14 @@ function applyConversationFilters(
     );
   }
 
-  return result;
+  // Sort pinned conversations before unpinned conversations while preserving existing sorting behavior within each group
+  return result.sort((a, b) => {
+    const aPinned = Boolean(a.isPinned);
+    const bPinned = Boolean(b.isPinned);
+    if (aPinned && !bPinned) return -1;
+    if (!aPinned && bPinned) return 1;
+    return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
+  });
 }
 
 /**
