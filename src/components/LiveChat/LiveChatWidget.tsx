@@ -20,9 +20,16 @@ import {
   FileText,
   ShieldCheck,
   Maximize2,
+  Minimize2,
+  Mic,
+  Square,
+  FileArchive,
+  FileSpreadsheet,
 } from "lucide-react";
 import LIVE_CHAT_ICON from "../../../public/assets/bot/Livechatbot.svg";
 import TelegramEmojiPicker from "./TelegramEmojiPicker";
+import AttachmentViewerModal, { type ViewerAttachment } from "./AttachmentViewerModal";
+import { useVoiceRecording } from "./useVoiceRecording";
 
 interface AttachmentItem {
   id: string;
@@ -66,11 +73,50 @@ interface ProfileState {
 }
 
 const QUICK_REACTIONS = ["👍", "❤️", "🔥", "🎉", "😂", "😮", "😢", "🙏"];
-const MAX_IMAGE_AUDIO_SIZE = 15 * 1024 * 1024; // 15MB
+const MAX_DOCUMENT_IMAGE_AUDIO_SIZE = 25 * 1024 * 1024; // 25MB
 const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB
 
-export default function LiveChatWidget() {
-  const [isOpen, setIsOpen] = useState(false);
+interface LiveChatWidgetProps {
+  isOpen?: boolean;
+  onToggle?: () => void;
+  onClose?: () => void;
+}
+
+export default function LiveChatWidget({
+  isOpen: controlledIsOpen,
+  onToggle: controlledOnToggle,
+  onClose: controlledOnClose,
+}: LiveChatWidgetProps = {}) {
+  const [internalIsOpen, setInternalIsOpen] = useState(false);
+  const isOpen = typeof controlledIsOpen === "boolean" ? controlledIsOpen : internalIsOpen;
+
+  const handleToggle = useCallback(() => {
+    if (controlledOnToggle) {
+      controlledOnToggle();
+    } else {
+      setInternalIsOpen((prev) => !prev);
+    }
+  }, [controlledOnToggle]);
+
+  const handleClose = useCallback(() => {
+    if (controlledOnClose) {
+      controlledOnClose();
+    } else {
+      setInternalIsOpen(false);
+    }
+  }, [controlledOnClose]);
+
+  const handleOpen = useCallback(() => {
+    if (controlledIsOpen !== undefined) {
+      if (!controlledIsOpen && controlledOnToggle) {
+        controlledOnToggle();
+      }
+    } else {
+      setInternalIsOpen(true);
+    }
+  }, [controlledIsOpen, controlledOnToggle]);
+
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -122,13 +168,31 @@ export default function LiveChatWidget() {
   const [pendingAttachments, setPendingAttachments] = useState<AttachmentItem[]>([]);
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const [uploadError, setUploadError] = useState("");
-  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [activeViewerAttachment, setActiveViewerAttachment] = useState<ViewerAttachment | null>(null);
+  const [activeViewerList, setActiveViewerList] = useState<ViewerAttachment[]>([]);
   const [deletingMsgId, setDeletingMsgId] = useState<string | null>(null);
   const [copiedToast, setCopiedToast] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const launcherRef = useRef<HTMLButtonElement>(null);
+  const chatRef = useRef<HTMLDivElement>(null);
+
+  // Setup Voice Recording hook
+  const {
+    isRecording,
+    recordingDuration,
+    errorMessage: voiceError,
+    startRecording,
+    stopRecording,
+    cancelRecording,
+    clearError: clearVoiceError,
+  } = useVoiceRecording({
+    onTranscript: (transcript) => {
+      setInputValue(transcript);
+    },
+  });
 
   // Cooldown countdown timer
   useEffect(() => {
@@ -157,6 +221,95 @@ export default function LiveChatWidget() {
       window.removeEventListener("offline", handleOffline);
     };
   }, []);
+
+  // Outside-click-to-close behavior in floating mode
+  useEffect(() => {
+    if (!isOpen || isFullscreen) return;
+
+    const handleOutsideClick = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+
+      if (chatRef.current?.contains(target) || launcherRef.current?.contains(target)) {
+        return;
+      }
+
+      // Do not close if clicking inside modals or popovers
+      if (target.closest('[role="dialog"]') && !chatRef.current?.contains(target)) {
+        return;
+      }
+
+      handleClose();
+    };
+
+    document.addEventListener("pointerdown", handleOutsideClick);
+    return () => document.removeEventListener("pointerdown", handleOutsideClick);
+  }, [isOpen, isFullscreen, handleClose]);
+
+  // Handle Escape key: close viewer -> close modal -> close pickers -> cancel voice -> exit fullscreen -> close chat
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (activeViewerAttachment) {
+          e.stopPropagation();
+          setActiveViewerAttachment(null);
+          return;
+        }
+        if (showProfileModal) {
+          e.stopPropagation();
+          setShowProfileModal(false);
+          return;
+        }
+        if (activeReactionMsgId || showFullPickerForMsgId || showComposerEmojiPicker) {
+          e.stopPropagation();
+          setActiveReactionMsgId(null);
+          setShowFullPickerForMsgId(null);
+          setShowComposerEmojiPicker(false);
+          return;
+        }
+        if (isRecording) {
+          e.stopPropagation();
+          cancelRecording();
+          return;
+        }
+        if (isFullscreen) {
+          e.stopPropagation();
+          setIsFullscreen(false);
+          return;
+        }
+        e.stopPropagation();
+        handleClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    isOpen,
+    isFullscreen,
+    activeViewerAttachment,
+    showProfileModal,
+    activeReactionMsgId,
+    showFullPickerForMsgId,
+    showComposerEmojiPicker,
+    isRecording,
+    cancelRecording,
+    handleClose,
+  ]);
+
+  // Lock body scroll in fullscreen mode
+  useEffect(() => {
+    if (!isOpen || !isFullscreen) return;
+
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isOpen, isFullscreen]);
 
   // Fetch messages helper with safe error backoff
   const fetchMessages = useCallback(async (markRead: boolean) => {
@@ -224,7 +377,7 @@ export default function LiveChatWidget() {
           setUnreadCount(data.unreadVisitorCount || 0);
 
           if (urlParams.get("live_chat") === "open") {
-            setIsOpen(true);
+            handleOpen();
           }
         }
       } catch (e) {
@@ -350,10 +503,10 @@ export default function LiveChatWidget() {
 
     setUploadError("");
     const isVideo = file.type.startsWith("video/");
-    const maxSize = isVideo ? MAX_VIDEO_SIZE : MAX_IMAGE_AUDIO_SIZE;
+    const maxSize = isVideo ? MAX_VIDEO_SIZE : MAX_DOCUMENT_IMAGE_AUDIO_SIZE;
 
     if (file.size > maxSize) {
-      setUploadError(`File exceeds ${isVideo ? "50MB" : "15MB"} limit.`);
+      setUploadError(`File exceeds ${isVideo ? "50MB" : "25MB"} limit.`);
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
@@ -629,43 +782,14 @@ export default function LiveChatWidget() {
 
   return (
     <>
-      {/* Lightbox Modal for Attachment Images */}
-      {lightboxImage && (
-        <div
-          role="dialog"
-          aria-label="Image preview"
-          className="fixed inset-0 z-60 bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-150"
-          onClick={() => setLightboxImage(null)}
-        >
-          <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={lightboxImage}
-              alt="Attachment preview"
-              className="max-h-[82vh] max-w-full rounded-2xl object-contain shadow-2xl border border-white/10"
-              onClick={(e) => e.stopPropagation()}
-            />
-            <div className="flex items-center gap-3 mt-3">
-              <a
-                href={`${lightboxImage}?download=true`}
-                download
-                className="px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-mono transition-colors flex items-center gap-1.5 cursor-pointer"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Download</span>
-              </a>
-              <button
-                type="button"
-                onClick={() => setLightboxImage(null)}
-                className="px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-mono transition-colors flex items-center gap-1.5 cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-                <span>Close (Esc)</span>
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Attachment Fullscreen Viewer Modal */}
+      {activeViewerAttachment && (
+        <AttachmentViewerModal
+          attachment={activeViewerAttachment}
+          allAttachments={activeViewerList}
+          onClose={() => setActiveViewerAttachment(null)}
+          onNavigate={(att) => setActiveViewerAttachment(att as AttachmentItem)}
+        />
       )}
 
       {/* Floating Copied Toast */}
@@ -678,10 +802,11 @@ export default function LiveChatWidget() {
 
       {/* Floating Launcher Trigger Pill */}
       <button
+        ref={launcherRef}
         type="button"
         onClick={() => {
-          setIsOpen(!isOpen);
-          if (!isOpen) {
+          handleToggle();
+          if (!isOpen && unreadCount > 0) {
             setUnreadCount(0);
           }
         }}
@@ -716,14 +841,19 @@ export default function LiveChatWidget() {
       {/* Telegram-Inspired Live Chat Window */}
       {isOpen && (
         <div
+          ref={chatRef}
           data-lenis-prevent
           data-lenis-prevent-touch
           role="dialog"
           aria-label="Telegram Live Chat"
-          className="fixed bottom-24 right-4 sm:right-24 w-[calc(100vw-2rem)] sm:w-96 md:w-[420px] h-[78vh] max-h-[640px] z-50 rounded-2xl border border-white/10 bg-[#0e1621] shadow-2xl flex flex-col overflow-hidden text-white font-sans select-none"
+          className={
+            isFullscreen
+              ? "fixed inset-0 z-50 w-screen h-screen md:h-[100dvh] bg-[#0e1621] shadow-2xl flex flex-col overflow-hidden text-white font-sans select-none animate-in fade-in duration-200"
+              : "fixed bottom-24 right-4 sm:right-24 w-[calc(100vw-2rem)] sm:w-96 md:w-[420px] h-[78vh] max-h-[640px] z-50 rounded-2xl border border-white/10 bg-[#0e1621] shadow-2xl flex flex-col overflow-hidden text-white font-sans select-none"
+          }
         >
           {/* Telegram Header */}
-          <header className="px-4 py-3 border-b border-white/10 bg-[#17212b] flex justify-between items-center select-none shadow-sm">
+          <header className="px-4 py-3 border-b border-white/10 bg-[#17212b] flex justify-between items-center select-none shadow-sm shrink-0">
             <div className="flex items-center gap-3">
               <div className="relative">
                 <div className="w-10 h-10 rounded-full bg-linear-to-tr from-cyan-600 to-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-md">
@@ -772,10 +902,26 @@ export default function LiveChatWidget() {
               >
                 <Settings className="w-4 h-4" />
               </button>
+
+              {/* Fullscreen / Minimize Toggle Button */}
               <button
                 type="button"
-                onClick={() => setIsOpen(false)}
-                title="Close Chat"
+                onClick={() => setIsFullscreen(!isFullscreen)}
+                aria-label={isFullscreen ? "Exit fullscreen" : "Expand to fullscreen"}
+                title={isFullscreen ? "Exit fullscreen" : "Expand to fullscreen"}
+                className="w-8 h-8 rounded-full text-gray-400 hover:text-white hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer"
+              >
+                {isFullscreen ? (
+                  <Minimize2 className="w-4 h-4" />
+                ) : (
+                  <Maximize2 className="w-4 h-4" />
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleClose}
+                title="Close Chat (Esc)"
                 className="w-8 h-8 rounded-full text-gray-400 hover:text-white hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -1126,77 +1272,138 @@ export default function LiveChatWidget() {
 
                         {/* Media & Attachments */}
                         {m.attachments && m.attachments.length > 0 && !m.isDeleted && (
-                          <div className="mt-2 pt-2 border-t border-white/10 space-y-2">
-                            {m.attachments.map((att) => {
-                              const isImg = att.mimeType.startsWith("image/");
-                              const isVid = att.mimeType.startsWith("video/");
-                              const isAud = att.mimeType.startsWith("audio/");
-                              const streamUrl = `/api/live-chat/attachments/${att.id}`;
-                              const downloadUrl = `${streamUrl}?download=true`;
-
-                              return (
-                                <div
-                                  key={att.id}
-                                  className="bg-black/30 rounded-xl p-2 border border-white/10 flex flex-col gap-1.5"
+                          <div className="mt-2 pt-2 border-t border-white/10 space-y-1.5">
+                            {/* If multiple attachments, show Download All */}
+                            {m.attachments.length > 1 && (
+                              <div className="flex items-center justify-between text-[11px] text-gray-400 pb-1 px-1">
+                                <span className="font-mono text-[10px]">{m.attachments.length} files attached</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveViewerAttachment(m.attachments![0]);
+                                    setActiveViewerList(m.attachments!);
+                                  }}
+                                  className="text-cyan-300 hover:underline flex items-center gap-1 font-mono font-bold cursor-pointer"
                                 >
-                                  {isImg && (
-                                    <div className="relative overflow-hidden rounded-lg group/img">
-                                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                                      <img
-                                        src={streamUrl}
-                                        alt={att.fileName}
-                                        className="max-h-48 max-w-full rounded-lg object-contain hover:scale-102 transition-transform cursor-pointer"
-                                        onClick={() => setLightboxImage(streamUrl)}
-                                      />
+                                  <Download className="w-3 h-3" />
+                                  <span>Download All</span>
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Responsive Grid for multiple attachments */}
+                            <div className={m.attachments.length > 1 ? "grid grid-cols-2 gap-1.5" : "flex flex-col gap-1.5"}>
+                              {m.attachments.map((att) => {
+                                const mime = att.mimeType.toLowerCase();
+                                const isImg = mime.startsWith("image/");
+                                const isVid = mime.startsWith("video/");
+                                const isAud = mime.startsWith("audio/");
+                                const isPdf = mime === "application/pdf" || att.fileName.toLowerCase().endsWith(".pdf");
+                                const streamUrl = `/api/live-chat/attachments/${att.id}`;
+                                const downloadUrl = `${streamUrl}?download=true`;
+
+                                return (
+                                  <div
+                                    key={att.id}
+                                    className="bg-black/40 rounded-xl p-2 border border-white/10 flex flex-col gap-1.5 overflow-hidden group/card hover:border-cyan-500/40 transition-colors"
+                                  >
+                                    {isImg && (
+                                      <div
+                                        className="relative overflow-hidden rounded-lg group/img cursor-pointer max-h-48 flex items-center justify-center bg-black/60"
+                                        onClick={() => {
+                                          setActiveViewerAttachment(att);
+                                          setActiveViewerList(m.attachments || []);
+                                        }}
+                                      >
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img
+                                          src={streamUrl}
+                                          alt={att.fileName}
+                                          className="max-h-48 max-w-full rounded-lg object-contain hover:scale-102 transition-transform"
+                                        />
+                                        <button
+                                          type="button"
+                                          aria-label="View Fullscreen"
+                                          className="absolute top-1.5 right-1.5 p-1 rounded-md bg-black/70 text-white opacity-0 group-hover/img:opacity-100 transition-opacity cursor-pointer"
+                                        >
+                                          <Maximize2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    )}
+
+                                    {isVid && (
+                                      <div
+                                        className="relative rounded-lg overflow-hidden bg-black max-h-48 cursor-pointer group/vid"
+                                        onClick={() => {
+                                          setActiveViewerAttachment(att);
+                                          setActiveViewerList(m.attachments || []);
+                                        }}
+                                      >
+                                        <video
+                                          className="max-h-48 w-full rounded-lg object-contain bg-black"
+                                          preload="metadata"
+                                        >
+                                          <source src={streamUrl} type={att.mimeType} />
+                                        </video>
+                                        <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover/vid:bg-black/20 transition-colors">
+                                          <div className="w-10 h-10 rounded-full bg-cyan-500/90 text-black flex items-center justify-center font-bold shadow-lg">
+                                            ▶
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {isAud && (
+                                      <audio controls className="w-full mt-1">
+                                        <source src={streamUrl} type={att.mimeType} />
+                                        Your browser does not support audio playback.
+                                      </audio>
+                                    )}
+
+                                    {!isImg && !isVid && !isAud && (
                                       <button
                                         type="button"
-                                        onClick={() => setLightboxImage(streamUrl)}
-                                        className="absolute top-1.5 right-1.5 p-1 rounded-md bg-black/60 text-white opacity-0 group-hover/img:opacity-100 transition-opacity cursor-pointer"
-                                        title="View Fullscreen"
+                                        onClick={() => {
+                                          setActiveViewerAttachment(att);
+                                          setActiveViewerList(m.attachments || []);
+                                        }}
+                                        className="flex items-center gap-2 p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-left w-full cursor-pointer"
                                       >
-                                        <Maximize2 className="w-3.5 h-3.5" />
+                                        <div className="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0">
+                                          {isPdf ? (
+                                            <FileText className="w-4 h-4 text-red-400" />
+                                          ) : (
+                                            <FileText className="w-4 h-4" />
+                                          )}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                          <p className="text-xs font-mono text-white truncate font-medium">{att.fileName}</p>
+                                          <p className="text-[10px] text-gray-400 font-mono">
+                                            {Math.round(att.fileSize / 1024)} KB
+                                          </p>
+                                        </div>
                                       </button>
-                                    </div>
-                                  )}
+                                    )}
 
-                                  {isVid && (
-                                    <video
-                                      controls
-                                      className="max-h-48 max-w-full rounded-lg bg-black"
-                                    >
-                                      <source src={streamUrl} type={att.mimeType} />
-                                      Your browser does not support video playback.
-                                    </video>
-                                  )}
-
-                                  {isAud && (
-                                    <audio controls className="w-full mt-1">
-                                      <source src={streamUrl} type={att.mimeType} />
-                                      Your browser does not support audio playback.
-                                    </audio>
-                                  )}
-
-                                  <div className="flex items-center justify-between text-[11px] text-gray-300 pt-0.5">
-                                    <span className="truncate max-w-[150px] font-mono flex items-center gap-1">
-                                      <FileText className="w-3.5 h-3.5 opacity-70 shrink-0" />
-                                      <span className="truncate">{att.fileName}</span>
-                                      <span className="opacity-60 text-[10px]">
-                                        ({Math.round(att.fileSize / 1024)} KB)
+                                    <div className="flex items-center justify-between text-[11px] text-gray-300 pt-0.5">
+                                      <span className="truncate max-w-[130px] font-mono flex items-center gap-1 text-[10px]">
+                                        <FileText className="w-3 h-3 opacity-70 shrink-0" />
+                                        <span className="truncate">{att.fileName}</span>
                                       </span>
-                                    </span>
-                                    <a
-                                      href={downloadUrl}
-                                      download={att.fileName}
-                                      className="text-cyan-300 hover:underline font-semibold flex items-center gap-1 shrink-0 ml-2"
-                                      title="Download attachment"
-                                    >
-                                      <Download className="w-3 h-3" />
-                                      <span>Save</span>
-                                    </a>
+                                      <a
+                                        href={downloadUrl}
+                                        download={att.fileName}
+                                        className="text-cyan-300 hover:underline font-semibold flex items-center gap-1 shrink-0 ml-1 text-[10px]"
+                                        title="Download attachment"
+                                      >
+                                        <Download className="w-3 h-3" />
+                                        <span>Save</span>
+                                      </a>
+                                    </div>
                                   </div>
-                                </div>
-                              );
-                            })}
+                                );
+                              })}
+                            </div>
                           </div>
                         )}
 
@@ -1459,71 +1666,134 @@ export default function LiveChatWidget() {
               </p>
             )}
 
-            {/* Input Form Row */}
-            <form onSubmit={handleSendMessage} className="flex gap-2 items-center">
-              {/* Hidden file input */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm,audio/mpeg,audio/wav,audio/ogg"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
+            {/* Voice Error Notification */}
+            {voiceError && (
+              <div className="bg-red-500/15 border border-red-500/30 rounded-xl px-3 py-1.5 flex items-center justify-between text-xs text-red-300 font-mono">
+                <span className="flex items-center gap-1.5 truncate">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 text-red-400" />
+                  <span className="truncate">{voiceError}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={clearVoiceError}
+                  className="text-red-300 hover:text-white p-0.5 ml-2 cursor-pointer"
+                  title="Dismiss error"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )}
 
-              {/* Attachment Button */}
-              <button
-                type="button"
-                disabled={isUploadingAttachment || isSending}
-                onClick={() => fileInputRef.current?.click()}
-                className="p-2 rounded-xl text-gray-400 hover:text-cyan-300 hover:bg-white/5 transition-colors disabled:opacity-40 cursor-pointer shrink-0"
-                title="Attach image, video, or audio"
-              >
-                <Paperclip className="w-5 h-5" />
-              </button>
+            {/* Active Voice Recording Status Bar */}
+            {isRecording ? (
+              <div className="flex items-center justify-between bg-red-500/10 border border-red-500/30 rounded-2xl p-2.5 px-4 animate-pulse">
+                <div className="flex items-center gap-2 text-xs font-mono text-red-400">
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
+                  <span className="font-bold">Listening...</span>
+                  <span className="text-gray-400">
+                    {Math.floor(recordingDuration / 60)}:
+                    {String(recordingDuration % 60).padStart(2, "0")}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={cancelRecording}
+                    className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white text-xs font-mono flex items-center gap-1 cursor-pointer transition-colors"
+                    title="Cancel recording"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>Cancel</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={stopRecording}
+                    className="p-1.5 px-3 rounded-lg bg-red-500 hover:bg-red-600 text-white font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-lg"
+                    title="Finish voice input"
+                  >
+                    <Square className="w-3 h-3 fill-current" />
+                    <span>Done</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Input Form Row */
+              <form onSubmit={handleSendMessage} className="flex gap-2 items-center">
+                {/* Hidden file input */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.zip"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
 
-              {/* Emoji Picker Button */}
-              <button
-                type="button"
-                onClick={() => setShowComposerEmojiPicker(!showComposerEmojiPicker)}
-                className={`p-2 rounded-xl transition-colors cursor-pointer shrink-0 ${
-                  showComposerEmojiPicker
-                    ? "text-cyan-400 bg-white/10"
-                    : "text-gray-400 hover:text-yellow-400 hover:bg-white/5"
-                }`}
-                title="Insert emoji"
-              >
-                <Smile className="w-5 h-5" />
-              </button>
+                {/* Attachment Button */}
+                <button
+                  type="button"
+                  disabled={isUploadingAttachment || isSending}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-2 rounded-xl text-gray-400 hover:text-cyan-300 hover:bg-white/5 transition-colors disabled:opacity-40 cursor-pointer shrink-0"
+                  title="Attach file, image, or video"
+                >
+                  <Paperclip className="w-5 h-5" />
+                </button>
 
-              {/* Message Text Input */}
-              <input
-                ref={inputRef}
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                maxLength={2000}
-                disabled={isSending}
-                placeholder={
-                  pendingAttachments.length > 0
-                    ? "Add a caption..."
-                    : "Write a message..."
-                }
-                className="flex-1 bg-[#0e1621] rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white placeholder:text-gray-500 outline-none border border-white/10 focus:border-cyan-400 transition-colors disabled:opacity-50"
-              />
+                {/* Emoji Picker Button */}
+                <button
+                  type="button"
+                  onClick={() => setShowComposerEmojiPicker(!showComposerEmojiPicker)}
+                  className={`p-2 rounded-xl transition-colors cursor-pointer shrink-0 ${
+                    showComposerEmojiPicker
+                      ? "text-cyan-400 bg-white/10"
+                      : "text-gray-400 hover:text-yellow-400 hover:bg-white/5"
+                  }`}
+                  title="Insert emoji"
+                >
+                  <Smile className="w-5 h-5" />
+                </button>
 
-              {/* Telegram Send Button */}
-              <button
-                type="submit"
-                disabled={isSending || (!inputValue.trim() && pendingAttachments.length === 0)}
-                className="w-9 h-9 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed shrink-0 cursor-pointer shadow-md"
-                title="Send message"
-              >
-                {isSending ? (
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Send className="w-4 h-4 ml-0.5" />
-                )}
-              </button>
-            </form>
+                {/* Voice Input Button */}
+                <button
+                  type="button"
+                  onClick={startRecording}
+                  disabled={isSending || isUploadingAttachment}
+                  className="p-2 rounded-xl text-gray-400 hover:text-cyan-300 hover:bg-white/5 transition-colors disabled:opacity-40 cursor-pointer shrink-0"
+                  title="Voice message (Speech Input)"
+                >
+                  <Mic className="w-5 h-5" />
+                </button>
+
+                {/* Message Text Input */}
+                <input
+                  ref={inputRef}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  maxLength={2000}
+                  disabled={isSending}
+                  placeholder={
+                    pendingAttachments.length > 0
+                      ? "Add a caption..."
+                      : "Write a message..."
+                  }
+                  className="flex-1 bg-[#0e1621] rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white placeholder:text-gray-500 outline-none border border-white/10 focus:border-cyan-400 transition-colors disabled:opacity-50"
+                />
+
+                {/* Telegram Send Button */}
+                <button
+                  type="submit"
+                  disabled={isSending || (!inputValue.trim() && pendingAttachments.length === 0)}
+                  className="w-9 h-9 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed shrink-0 cursor-pointer shadow-md"
+                  title="Send message"
+                >
+                  {isSending ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4 ml-0.5" />
+                  )}
+                </button>
+              </form>
+            )}
           </footer>
         </div>
       )}

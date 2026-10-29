@@ -11,7 +11,9 @@ import fs from "fs";
 import path from "path";
 
 // Durable local storage path for persistent offline & dev execution
-const DATA_DIR = path.join(/*turbopackIgnore: true*/ process.cwd(), ".data");
+const DATA_DIR = process.env.VERCEL
+  ? path.join("/tmp", ".data")
+  : path.join(/*turbopackIgnore: true*/ process.cwd(), ".data");
 const STORE_FILE = path.join(/*turbopackIgnore: true*/ DATA_DIR, "live-chat-store.json");
 export const ATTACHMENTS_DIR = path.join(/*turbopackIgnore: true*/ DATA_DIR, "attachments");
 
@@ -1195,11 +1197,17 @@ export async function createAttachmentRecord({
     createdAt,
   };
 
+  // Always keep in local store for immediate fast memory lookup
+  runWithLock(() => {
+    localStore.attachments[id] = attachment;
+    persistStoreToDisk();
+  });
+
   const isSupabaseReady = await checkSupabaseAvailable();
   if (isSupabaseReady) {
     try {
       const serverClient = getServerSupabase();
-      await serverClient.from("chat_attachments").insert([
+      const { error } = await serverClient.from("chat_attachments").insert([
         {
           id: attachment.id,
           conversation_id: attachment.conversationId,
@@ -1211,17 +1219,19 @@ export async function createAttachmentRecord({
           created_at: attachment.createdAt,
         },
       ]);
-      return attachment;
+      if (!error) {
+        return attachment;
+      }
+      if (shouldEnforceProductionPersistence()) {
+        throw new DatabaseUnavailableError(`Supabase chat_attachments insert failed: ${error.message}`);
+      }
+      console.warn("[Live Chat DB] Error inserting attachment in Supabase, using durable storage:", error.message);
     } catch (e) {
       if (shouldEnforceProductionPersistence()) throw e;
     }
   }
 
-  return runWithLock(() => {
-    localStore.attachments[id] = attachment;
-    persistStoreToDisk();
-    return attachment;
-  });
+  return attachment;
 }
 
 export async function getAttachmentById(id: string): Promise<ChatAttachment | null> {

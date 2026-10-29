@@ -36,6 +36,8 @@ import sociallink from "./prjectimg/sociallink.png";
 import qrcode from "./prjectimg/qrcode.png";
 import scoreboard from "./prjectimg/cricket.png";
 import grade from "./prjectimg/grademark.png"
+import shachat from "./prjectimg/shachat.png"
+import luxion from "./prjectimg/luxion.jpeg"
 
 export {
   logo,
@@ -73,4 +75,6 @@ export {
   qrcode,
   scoreboard,
   grade,
+  shachat,
+  luxion
 };

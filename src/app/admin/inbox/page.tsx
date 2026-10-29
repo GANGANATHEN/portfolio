@@ -35,6 +35,7 @@ import {
   PinOff,
 } from "lucide-react";
 import TelegramEmojiPicker from "@/components/LiveChat/TelegramEmojiPicker";
+import AttachmentViewerModal, { type ViewerAttachment } from "@/components/LiveChat/AttachmentViewerModal";
 
 interface AttachmentItem {
   id: string;
@@ -159,7 +160,8 @@ export default function AdminInboxPage({
   // Modals & Viewers
   const [deleteConvModalOpen, setDeleteConvModalOpen] = useState(false);
   const [targetDeleteMsgId, setTargetDeleteMsgId] = useState<string | null>(null);
-  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [activeViewerAttachment, setActiveViewerAttachment] = useState<ViewerAttachment | null>(null);
+  const [activeViewerList, setActiveViewerList] = useState<ViewerAttachment[]>([]);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -1045,43 +1047,14 @@ export default function AdminInboxPage({
 
   return (
     <div className="h-screen w-screen bg-[#0e1621] text-white flex flex-col overflow-hidden font-sans select-none">
-      {/* Lightbox Modal */}
-      {lightboxImage && (
-        <div
-          role="dialog"
-          aria-label="Image preview"
-          className="fixed inset-0 z-60 bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-150"
-          onClick={() => setLightboxImage(null)}
-        >
-          <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={lightboxImage}
-              alt="Attachment preview"
-              className="max-h-[82vh] max-w-full rounded-2xl object-contain shadow-2xl border border-white/10"
-              onClick={(e) => e.stopPropagation()}
-            />
-            <div className="flex items-center gap-3 mt-3">
-              <a
-                href={`${lightboxImage}?download=true`}
-                download
-                className="px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-mono transition-colors flex items-center gap-1.5 cursor-pointer"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Download</span>
-              </a>
-              <button
-                type="button"
-                onClick={() => setLightboxImage(null)}
-                className="px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-mono transition-colors flex items-center gap-1.5 cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-                <span>Close (Esc)</span>
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Attachment Fullscreen Viewer Modal */}
+      {activeViewerAttachment && (
+        <AttachmentViewerModal
+          attachment={activeViewerAttachment}
+          allAttachments={activeViewerList}
+          onClose={() => setActiveViewerAttachment(null)}
+          onNavigate={(att) => setActiveViewerAttachment(att as AttachmentItem)}
+        />
       )}
 
       {/* Copied Feedback Toast */}
@@ -1548,77 +1521,138 @@ export default function AdminInboxPage({
 
                             {/* Attachments Display */}
                             {m.attachments && m.attachments.length > 0 && !m.isDeleted && (
-                              <div className="mt-2.5 pt-2 border-t border-white/10 space-y-2">
-                                {m.attachments.map((att) => {
-                                  const isImg = att.mimeType.startsWith("image/");
-                                  const isVid = att.mimeType.startsWith("video/");
-                                  const isAud = att.mimeType.startsWith("audio/");
-                                  const streamUrl = `/api/live-chat/attachments/${att.id}`;
-                                  const downloadUrl = `${streamUrl}?download=true`;
-
-                                  return (
-                                    <div
-                                      key={att.id}
-                                      className="bg-black/40 rounded-xl p-2 border border-white/10 flex flex-col gap-1.5"
+                              <div className="mt-2.5 pt-2 border-t border-white/10 space-y-1.5">
+                                {/* If multiple attachments, show Download All */}
+                                {m.attachments.length > 1 && (
+                                  <div className="flex items-center justify-between text-[11px] text-gray-400 pb-1 px-1">
+                                    <span className="font-mono text-[10px]">{m.attachments.length} files attached</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setActiveViewerAttachment(m.attachments![0]);
+                                        setActiveViewerList(m.attachments!);
+                                      }}
+                                      className="text-cyan-300 hover:underline flex items-center gap-1 font-mono font-bold cursor-pointer"
                                     >
-                                      {isImg && (
-                                        <div className="relative group/img overflow-hidden rounded-lg">
-                                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                                          <img
-                                            src={streamUrl}
-                                            alt={att.fileName}
-                                            className="max-h-48 max-w-full rounded-lg object-contain hover:scale-102 transition-transform cursor-pointer"
-                                            onClick={() => setLightboxImage(streamUrl)}
-                                          />
+                                      <Download className="w-3 h-3" />
+                                      <span>Download All</span>
+                                    </button>
+                                  </div>
+                                )}
+
+                                {/* Responsive Grid for multiple attachments */}
+                                <div className={m.attachments.length > 1 ? "grid grid-cols-2 gap-1.5" : "flex flex-col gap-1.5"}>
+                                  {m.attachments.map((att) => {
+                                    const mime = att.mimeType.toLowerCase();
+                                    const isImg = mime.startsWith("image/");
+                                    const isVid = mime.startsWith("video/");
+                                    const isAud = mime.startsWith("audio/");
+                                    const isPdf = mime === "application/pdf" || att.fileName.toLowerCase().endsWith(".pdf");
+                                    const streamUrl = `/api/live-chat/attachments/${att.id}`;
+                                    const downloadUrl = `${streamUrl}?download=true`;
+
+                                    return (
+                                      <div
+                                        key={att.id}
+                                        className="bg-black/40 rounded-xl p-2 border border-white/10 flex flex-col gap-1.5 overflow-hidden group/card hover:border-cyan-500/40 transition-colors"
+                                      >
+                                        {isImg && (
+                                          <div
+                                            className="relative group/img overflow-hidden rounded-lg cursor-pointer max-h-48 flex items-center justify-center bg-black/60"
+                                            onClick={() => {
+                                              setActiveViewerAttachment(att);
+                                              setActiveViewerList(m.attachments || []);
+                                            }}
+                                          >
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img
+                                              src={streamUrl}
+                                              alt={att.fileName}
+                                              className="max-h-48 max-w-full rounded-lg object-contain hover:scale-102 transition-transform"
+                                            />
+                                            <button
+                                              type="button"
+                                              aria-label="View Fullscreen"
+                                              className="absolute top-1.5 right-1.5 p-1 rounded-md bg-black/70 text-white opacity-0 group-hover/img:opacity-100 transition-opacity cursor-pointer"
+                                            >
+                                              <Maximize2 className="w-3.5 h-3.5" />
+                                            </button>
+                                          </div>
+                                        )}
+
+                                        {isVid && (
+                                          <div
+                                            className="relative rounded-lg overflow-hidden bg-black max-h-48 cursor-pointer group/vid"
+                                            onClick={() => {
+                                              setActiveViewerAttachment(att);
+                                              setActiveViewerList(m.attachments || []);
+                                            }}
+                                          >
+                                            <video
+                                              className="max-h-48 w-full rounded-lg object-contain bg-black"
+                                              preload="metadata"
+                                            >
+                                              <source src={streamUrl} type={att.mimeType} />
+                                            </video>
+                                            <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover/vid:bg-black/20 transition-colors">
+                                              <div className="w-10 h-10 rounded-full bg-cyan-500/90 text-black flex items-center justify-center font-bold shadow-lg">
+                                                ▶
+                                              </div>
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        {isAud && (
+                                          <audio controls className="w-full mt-1">
+                                            <source src={streamUrl} type={att.mimeType} />
+                                            Your browser does not support audio playback.
+                                          </audio>
+                                        )}
+
+                                        {!isImg && !isVid && !isAud && (
                                           <button
                                             type="button"
-                                            onClick={() => setLightboxImage(streamUrl)}
-                                            className="absolute top-1.5 right-1.5 p-1 rounded-md bg-black/60 text-white opacity-0 group-hover/img:opacity-100 transition-opacity cursor-pointer"
-                                            title="View Fullscreen"
+                                            onClick={() => {
+                                              setActiveViewerAttachment(att);
+                                              setActiveViewerList(m.attachments || []);
+                                            }}
+                                            className="flex items-center gap-2 p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-left w-full cursor-pointer"
                                           >
-                                            <Maximize2 className="w-3.5 h-3.5" />
+                                            <div className="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0">
+                                              {isPdf ? (
+                                                <FileText className="w-4 h-4 text-red-400" />
+                                              ) : (
+                                                <FileText className="w-4 h-4" />
+                                              )}
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                              <p className="text-xs font-mono text-white truncate font-medium">{att.fileName}</p>
+                                              <p className="text-[10px] text-gray-400 font-mono">
+                                                {Math.round(att.fileSize / 1024)} KB
+                                              </p>
+                                            </div>
                                           </button>
-                                        </div>
-                                      )}
+                                        )}
 
-                                      {isVid && (
-                                        <video
-                                          controls
-                                          className="max-h-48 max-w-full rounded-lg bg-black"
-                                        >
-                                          <source src={streamUrl} type={att.mimeType} />
-                                          Your browser does not support video playback.
-                                        </video>
-                                      )}
-
-                                      {isAud && (
-                                        <audio controls className="w-full mt-1">
-                                          <source src={streamUrl} type={att.mimeType} />
-                                          Your browser does not support audio playback.
-                                        </audio>
-                                      )}
-
-                                      <div className="flex items-center justify-between text-[11px] text-gray-300 pt-0.5">
-                                        <span className="truncate max-w-[150px] font-mono flex items-center gap-1">
-                                          <FileText className="w-3.5 h-3.5 opacity-70 shrink-0" />
-                                          <span className="truncate">{att.fileName}</span>
-                                          <span className="opacity-60 text-[10px]">
-                                            ({Math.round(att.fileSize / 1024)} KB)
+                                        <div className="flex items-center justify-between text-[11px] text-gray-300 pt-0.5">
+                                          <span className="truncate max-w-[130px] font-mono flex items-center gap-1 text-[10px]">
+                                            <FileText className="w-3 h-3 opacity-70 shrink-0" />
+                                            <span className="truncate">{att.fileName}</span>
                                           </span>
-                                        </span>
-                                        <a
-                                          href={downloadUrl}
-                                          download={att.fileName}
-                                          className="text-cyan-300 hover:underline font-semibold flex items-center gap-1 shrink-0 ml-2"
-                                          title="Download attachment"
-                                        >
-                                          <Download className="w-3 h-3" />
-                                          <span>Save</span>
-                                        </a>
+                                          <a
+                                            href={downloadUrl}
+                                            download={att.fileName}
+                                            className="text-cyan-300 hover:underline font-semibold flex items-center gap-1 shrink-0 ml-1 text-[10px]"
+                                            title="Download attachment"
+                                          >
+                                            <Download className="w-3 h-3" />
+                                            <span>Save</span>
+                                          </a>
+                                        </div>
                                       </div>
-                                    </div>
-                                  );
-                                })}
+                                    );
+                                  })}
+                                </div>
                               </div>
                             )}
 
@@ -1860,7 +1894,7 @@ export default function AdminInboxPage({
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/*,video/mp4,audio/*"
+                    accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.zip"
                     onChange={handleFileUpload}
                     className="hidden"
                   />

@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { Search, X, Smile, ThumbsUp, Heart, Sparkles, type LucideIcon } from "lucide-react";
 
 interface TelegramEmojiPickerProps {
@@ -232,8 +232,31 @@ export default function TelegramEmojiPicker({
     return matched;
   }, [activeCategory, searchQuery]);
 
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    document.addEventListener("pointerdown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
   return (
     <div
+      ref={pickerRef}
       role="dialog"
       aria-label="Emoji picker"
       className="w-72 sm:w-80 bg-[#17212b]/98 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-2.5 flex flex-col z-50 text-white animate-in fade-in zoom-in-95 duration-150 select-none"

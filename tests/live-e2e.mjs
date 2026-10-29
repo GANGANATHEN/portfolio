@@ -389,6 +389,78 @@ async function runE2E() {
   );
   console.log("✔ Direct navigation to /admin/inbox/<id> with auth returns HTTP 200");
 
+  console.log("\n=== 9. Testing Multipart Attachment Uploads & Authorization ===");
+  // Test 9.1: Brand new visitor uploading an image before any text message
+  const imageFormData = new FormData();
+  const dummyImageBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]); // PNG magic bytes
+  const imageBlob = new Blob([dummyImageBytes], { type: "image/png" });
+  imageFormData.append("file", imageBlob, "test-preview.png");
+
+  const newVisitorUploadRes = await fetch(`${BASE_URL}/api/live-chat/attachments`, {
+    method: "POST",
+    body: imageFormData,
+  });
+  assert.equal(newVisitorUploadRes.status, 200, "New visitor attachment upload should return HTTP 200");
+  const newVisitorUploadData = await newVisitorUploadRes.json();
+  assert.equal(newVisitorUploadData.success, true);
+  assert.ok(newVisitorUploadData.attachment.id);
+  assert.equal(newVisitorUploadData.attachment.fileName, "test-preview.png");
+  assert.equal(newVisitorUploadData.attachment.mimeType, "image/png");
+
+  // Verify that a session cookie was established and returned for the new visitor
+  const uploadCookie = newVisitorUploadRes.headers.get("set-cookie");
+  assert.ok(uploadCookie, "Upload response for new visitor must issue session cookie");
+  assert.ok(uploadCookie.includes("ganganathan_visitor_session"));
+  console.log("✔ Brand-new visitor successfully uploaded image and received guest session cookie");
+
+  // Test 9.2: Uploading a PDF document
+  const pdfFormData = new FormData();
+  const dummyPdfBytes = new Uint8Array([37, 80, 68, 70, 45, 49, 46, 52]); // %PDF-1.4 magic bytes
+  const pdfBlob = new Blob([dummyPdfBytes], { type: "application/pdf" });
+  pdfFormData.append("file", pdfBlob, "test-project-brief.pdf");
+
+  const pdfUploadRes = await fetch(`${BASE_URL}/api/live-chat/attachments`, {
+    method: "POST",
+    headers: {
+      Cookie: uploadCookie,
+    },
+    body: pdfFormData,
+  });
+  assert.equal(pdfUploadRes.status, 200, "PDF upload must succeed with HTTP 200");
+  const pdfUploadData = await pdfUploadRes.json();
+  assert.equal(pdfUploadData.success, true);
+  assert.equal(pdfUploadData.attachment.mimeType, "application/pdf");
+  console.log("✔ PDF document attachment uploaded successfully");
+
+  // Test 9.3: Authorized attachment retrieval
+  const getAttachmentRes = await fetch(`${BASE_URL}/api/live-chat/attachments/${newVisitorUploadData.attachment.id}`, {
+    headers: { Cookie: uploadCookie },
+  });
+  assert.equal(getAttachmentRes.status, 200, "Authorized owner must be able to view attachment");
+  assert.equal(getAttachmentRes.headers.get("content-type"), "image/png");
+  console.log("✔ Authorized user successfully streamed attachment");
+
+  // Test 9.4: Unauthorized stranger attempts to access visitor's attachment -> 403 Forbidden
+  const strangerUploadRes = await fetch(`${BASE_URL}/api/live-chat/attachments/${newVisitorUploadData.attachment.id}`, {
+    headers: { Cookie: "ganganathan_visitor_session=unauthorized_stranger_token_00000000000000000000000000000000" },
+  });
+  assert.equal(strangerUploadRes.status, 403, "Unauthorized user must be rejected with HTTP 403");
+  console.log("✔ Security check passed: Unauthorized attachment access blocked with HTTP 403");
+
+  // Test 9.5: Admin is authorized to view visitor's attachment
+  const adminAttachmentRes = await fetch(`${BASE_URL}/api/live-chat/attachments/${newVisitorUploadData.attachment.id}`, {
+    headers: { Cookie: adminCookie },
+  });
+  assert.equal(adminAttachmentRes.status, 200, "Admin must be authorized to view conversation attachments");
+  console.log("✔ Admin successfully accessed visitor attachment");
+
+  console.log("\n=== 10. Testing Project Card Data Integrity ===");
+  const fs = await import("fs");
+  const constantsContent = fs.readFileSync(new URL("../src/constants/index.ts", import.meta.url), "utf-8");
+  assert.ok(constantsContent.includes('name: "ShaChat"'), "ShaChat project must exist in constants");
+  assert.ok(/name:\s*"ShaChat"[\s\S]*?source_code_link:\s*null/.test(constantsContent), "ShaChat source_code_link must be null (private repo)");
+  console.log("✔ Project card private repository and deployment data validated");
+
   console.log("\n=======================================================");
   console.log("🎉 ALL E2E FUNCTIONAL, SECURITY, AND PRIVACY CHECKS PASSED!");
   console.log("=======================================================");

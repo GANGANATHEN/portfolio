@@ -1,4 +1,5 @@
 "use client";
+import React, { useState, useEffect, useCallback } from "react";
 import About from "@/components/About";
 import MultiShapeMorph from "@/components/background/MultiShapeMorph";
 import Chatbot from "@/components/Bot";
@@ -12,6 +13,31 @@ import Works from "@/components/Works";
 import Feedbacks from "@/components/Feedbacks";
 
 export default function Home() {
+  // Coordinated mutual-exclusion state for floating chat panels
+  const [activeChat, setActiveChat] = useState<"none" | "chatbot" | "livechat">("none");
+
+  // Auto-open live chat if visited via notification email link (?live_chat=open)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("live_chat") === "open") {
+        setActiveChat("livechat");
+      }
+    }
+  }, []);
+
+  const toggleChatbot = useCallback(() => {
+    setActiveChat((prev) => (prev === "chatbot" ? "none" : "chatbot"));
+  }, []);
+
+  const toggleLiveChat = useCallback(() => {
+    setActiveChat((prev) => (prev === "livechat" ? "none" : "livechat"));
+  }, []);
+
+  const closeChat = useCallback(() => {
+    setActiveChat("none");
+  }, []);
+
   return (
     <div className="relative z-0 bg-primary min-h-screen">
       {/* Nav bar */}
@@ -31,9 +57,17 @@ export default function Home() {
       <Works />
       <Feedbacks />
       {/* AI Assistant Chatbot */}
-      <Chatbot />
+      <Chatbot
+        isOpen={activeChat === "chatbot"}
+        onToggle={toggleChatbot}
+        onClose={closeChat}
+      />
       {/* Direct Live Visitor Chat System */}
-      <LiveChatWidget />
+      <LiveChatWidget
+        isOpen={activeChat === "livechat"}
+        onToggle={toggleLiveChat}
+        onClose={closeChat}
+      />
       <Contact />
     </div>
   );

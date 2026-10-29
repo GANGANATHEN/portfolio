@@ -3,6 +3,7 @@ import {
   VISITOR_COOKIE_NAME,
   ADMIN_COOKIE_NAME,
   hashToken,
+  generateSecureToken,
   verifyAdminSessionToken,
 } from "@/lib/live-chat/security";
 import {
@@ -21,25 +22,49 @@ const ALLOWED_MIME_TYPES = new Set([
   "image/png",
   "image/gif",
   "image/webp",
+  "image/svg+xml",
+  "image/bmp",
   // Videos
   "video/mp4",
   "video/webm",
   "video/quicktime",
+  "video/ogg",
+  "video/x-matroska",
   // Audio
   "audio/mpeg",
   "audio/wav",
   "audio/ogg",
   "audio/mp4",
   "audio/webm",
+  "audio/aac",
+  "audio/x-m4a",
+  "audio/flac",
+  // Documents & Files
+  "application/pdf",
+  "text/plain",
+  "text/csv",
+  "text/markdown",
+  "text/html",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/zip",
+  "application/x-zip-compressed",
+  "application/x-tar",
+  "application/gzip",
+  "application/json",
+  "application/xml",
 ]);
 
-const MAX_IMAGE_AUDIO_SIZE = 15 * 1024 * 1024; // 15 MB
+const MAX_DOCUMENT_IMAGE_AUDIO_SIZE = 25 * 1024 * 1024; // 25 MB
 const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50 MB
 
 export async function POST(req: NextRequest) {
   try {
     // 1. Authenticate either visitor or admin
-    const visitorCookie = req.cookies.get(VISITOR_COOKIE_NAME)?.value;
     const adminCookie = req.cookies.get(ADMIN_COOKIE_NAME)?.value;
     const isAdmin = verifyAdminSessionToken(adminCookie);
 
@@ -54,15 +79,22 @@ export async function POST(req: NextRequest) {
     }
 
     let conversationId: string | null = null;
+    let isNewVisitorSession = false;
+    let visitorToken = req.cookies.get(VISITOR_COOKIE_NAME)?.value;
 
     if (isAdmin) {
       const targetId = formData.get("conversationId");
       if (typeof targetId === "string" && targetId.trim()) {
         const conv = await getConversationById(targetId.trim());
-        if (conv) conversationId = conv.id;
+        conversationId = conv ? conv.id : targetId.trim();
       }
-    } else if (visitorCookie) {
-      const conv = await getOrCreateConversationByHash(hashToken(visitorCookie));
+    } else {
+      if (!visitorToken || visitorToken.length < 32) {
+        visitorToken = generateSecureToken();
+        isNewVisitorSession = true;
+      }
+      const tokenHash = hashToken(visitorToken);
+      const conv = await getOrCreateConversationByHash(tokenHash);
       if (conv) conversationId = conv.id;
     }
 
@@ -74,12 +106,12 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Validate MIME type
-    const mimeType = file.type.toLowerCase();
+    const mimeType = file.type.toLowerCase() || "application/octet-stream";
     if (!ALLOWED_MIME_TYPES.has(mimeType)) {
       return NextResponse.json(
         {
           error:
-            "Unsupported file type. Only images (PNG, JPEG, WebP, GIF), videos (MP4, WebM, MOV), and audio (MP3, WAV, OGG) are allowed.",
+            "Unsupported file type. Please upload standard images, videos, audio, PDFs, or documents.",
         },
         { status: 400 },
       );
@@ -87,7 +119,7 @@ export async function POST(req: NextRequest) {
 
     // 3. Validate File Size
     const isVideo = mimeType.startsWith("video/");
-    const maxSize = isVideo ? MAX_VIDEO_SIZE : MAX_IMAGE_AUDIO_SIZE;
+    const maxSize = isVideo ? MAX_VIDEO_SIZE : MAX_DOCUMENT_IMAGE_AUDIO_SIZE;
     if (file.size > maxSize) {
       const limitMb = Math.round(maxSize / (1024 * 1024));
       return NextResponse.json(
@@ -126,7 +158,7 @@ export async function POST(req: NextRequest) {
       storagePath: storedRelativePath,
     });
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       attachment: {
         id: attachment.id,
@@ -138,6 +170,20 @@ export async function POST(req: NextRequest) {
         url: `/api/live-chat/attachments/${attachment.id}`,
       },
     });
+
+    if (isNewVisitorSession && visitorToken) {
+      response.cookies.set({
+        name: VISITOR_COOKIE_NAME,
+        value: visitorToken,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 60 * 60 * 24 * 365,
+        path: "/",
+      });
+    }
+
+    return response;
   } catch (error) {
     console.error("[Attachment Upload Error]:", error);
     return NextResponse.json(

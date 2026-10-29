@@ -31,6 +31,8 @@ import {
   qrcode,
   scoreboard,
   grade,
+  shachat,
+  luxion,
 } from "../../public/assets";
 
 export const navLinks = [
@@ -308,23 +310,89 @@ export const projects = [
   {
     name: "ShaChat",
     description:
-      "Academic GPA and semester grade calculation application with instant score weighting and breakdown.",
+      "ShaChat is a real-time chat application for fast and seamless messaging.",
     tags: [
       {
-        name: "HTML",
+        name: "Next.js",
         color: "blue-text-gradient",
       },
       {
-        name: "CSS",
-        color: "orange-text-gradient",
+        name: "React",
+        color: "pink-text-gradient",
       },
       {
         name: "JavaScript",
-        color: "pink-text-gradient",
+        color: "orange-text-gradient",
+      },
+      {
+        name: "Redux",
+        color: "purple-text-gradient",
+      },
+      {
+        name: "Node.js",
+        color: "green-text-gradient",
+      },
+      {
+        name: "Express.js",
+        color: "orange-text-gradient",
+      },
+      {
+        name: "MongoDB",
+        color: "green-text-gradient",
+      },
+      {
+        name: "Tailwind CSS",
+        color: "blue-text-gradient",
       },
     ],
-    image: grade,
+    image: shachat,
     source_code_link: null,
-    url: "https://ganganathangradecal.netlify.app",
+    url: "https://shachat.vercel.app/",
+  },
+  {
+    name: "Luxion",
+    description:
+      "A personal AI assistant built with a modern web interface and a high-performance native backend, combining AI capabilities with cross-platform desktop technology.",
+    tags: [
+      {
+        name: "Python",
+        color: "blue-text-gradient",
+      },
+      {
+        name: "Next.js",
+        color: "white-text-gradient",
+      },
+      {
+        name: "TypeScript",
+        color: "blue-text-gradient",
+      },
+      {
+        name: "Tailwind CSS",
+        color: "pink-text-gradient",
+      },
+      {
+        name: "Rust",
+        color: "orange-text-gradient",
+      },
+      {
+        name: "Tauri",
+        color: "blue-text-gradient",
+      },
+      {
+        name: "C++",
+        color: "green-text-gradient",
+      },
+      {
+        name: "C",
+        color: "blue-text-gradient",
+      },
+      {
+        name: "CMake",
+        color: "purple-text-gradient",
+      },
+    ],
+    image: luxion,
+    source_code_link: null,
+    url: null,
   },
 ];
