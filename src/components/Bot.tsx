@@ -24,15 +24,19 @@ interface ChatbotProps {
   isOpen?: boolean;
   onToggle?: () => void;
   onClose?: () => void;
+  isEmbedded?: boolean;
+  isFullscreen?: boolean;
 }
 
 const Chatbot = ({
   isOpen: controlledIsOpen,
   onToggle: controlledOnToggle,
   onClose: controlledOnClose,
+  isEmbedded = false,
+  isFullscreen: controlledIsFullscreen,
 }: ChatbotProps = {}) => {
   const [internalIsOpen, setInternalIsOpen] = useState(false);
-  const isOpen = typeof controlledIsOpen === "boolean" ? controlledIsOpen : internalIsOpen;
+  const isOpen = isEmbedded ? true : (typeof controlledIsOpen === "boolean" ? controlledIsOpen : internalIsOpen);
 
   const handleToggle = useCallback(() => {
     if (controlledOnToggle) {
@@ -50,7 +54,9 @@ const Chatbot = ({
     }
   }, [controlledOnClose]);
 
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [internalIsFullscreen, setInternalIsFullscreen] = useState(false);
+  const isFullscreen = typeof controlledIsFullscreen === "boolean" ? controlledIsFullscreen : internalIsFullscreen;
+  const setIsFullscreen = setInternalIsFullscreen;
   const [messages, setMessages] = useState<Message[]>([
     { role: "bot", text: "Hello! Ready to explore my portfolio?" },
   ]);
@@ -248,47 +254,51 @@ const Chatbot = ({
 
   return (
     <>
-      {/* Floating Trigger Button for AI Chatbot */}
-      <button
-        ref={launcherRef}
-        type="button"
-        onClick={handleToggle}
-        aria-label="Open Ganganathan's AI Assistant"
-        aria-expanded={isOpen}
-        title="Ganganathan's AI Assistant"
-        className="fixed bottom-6 right-6 sm:bottom-8 sm:right-8 z-40 p-2 rounded-full bg-black/60 backdrop-blur-md border border-white/10 hover:border-cyan-400/50 hover:scale-105 active:scale-95 transition-all flex items-center justify-center cursor-pointer shadow-xl group"
-      >
-        <Image
-          src={AI_BOT_IMG}
-          alt="AI Bot"
-          width={56}
-          height={56}
-          className="object-contain drop-shadow-2xl w-12 h-12 sm:w-14 sm:h-14 transition-transform group-hover:rotate-6"
-        />
-        <span className="sr-only">Toggle AI Assistant</span>
-        <span className="absolute -top-1 -right-1 flex h-3 w-3">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-400"></span>
-        </span>
-      </button>
+      {/* Floating Trigger Button for AI Chatbot (Standalone mode only) */}
+      {!isEmbedded && (
+        <button
+          ref={launcherRef}
+          type="button"
+          onClick={handleToggle}
+          aria-label="Open Ganganathan's AI Assistant"
+          aria-expanded={isOpen}
+          title="Ganganathan's AI Assistant"
+          className="fixed bottom-6 right-6 sm:bottom-8 sm:right-8 z-40 p-2 rounded-full bg-black/60 backdrop-blur-md border border-white/10 hover:border-cyan-400/50 hover:scale-105 active:scale-95 transition-all flex items-center justify-center cursor-pointer shadow-xl group"
+        >
+          <Image
+            src={AI_BOT_IMG}
+            alt="AI Bot"
+            width={56}
+            height={56}
+            className="object-contain drop-shadow-2xl w-12 h-12 sm:w-14 sm:h-14 transition-transform group-hover:rotate-6"
+          />
+          <span className="sr-only">Toggle AI Assistant</span>
+          <span className="absolute -top-1 -right-1 flex h-3 w-3">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-400"></span>
+          </span>
+        </button>
+      )}
 
-      {/* Chat Window: Either Floating Window or Dedicated Fullscreen Workspace */}
+      {/* Chat Window: Either Floating Window, Dedicated Fullscreen Workspace, or Embedded Panel */}
       {isOpen && (
         <div
           data-lenis-prevent
           data-lenis-prevent-touch
           ref={chatRef}
-          role="dialog"
-          aria-modal="true"
+          role={isEmbedded ? "region" : "dialog"}
+          aria-modal={isEmbedded ? undefined : "true"}
           aria-label="Ganganathan AI Assistant"
           className={
-            isFullscreen
+            isEmbedded
+              ? "flex-1 w-full h-full bg-[#0a0a0c] flex flex-col overflow-hidden"
+              : isFullscreen
               ? "fixed inset-0 z-50 w-screen h-screen md:h-[100dvh] bg-[#0a0a0c] flex flex-col overflow-hidden animate-in fade-in duration-200"
               : "fixed bottom-24 right-4 sm:right-8 w-[calc(100vw-2rem)] sm:w-88 md:w-96 h-[72vh] max-h-[580px] z-50 rounded-3xl border border-white/10 bg-[#0a0a0c]/98 backdrop-blur-2xl shadow-2xl flex flex-col overflow-hidden"
           }
         >
           {/* Header */}
-          <header className="p-3.5 sm:p-4 border-b border-white/10 bg-white/5 flex justify-between items-center select-none shrink-0">
+          <header className="p-3 sm:p-3.5 border-b border-white/10 bg-white/5 flex justify-between items-center select-none shrink-0">
             <div className="flex items-center gap-2.5">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
               <div>
@@ -301,33 +311,35 @@ const Chatbot = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-1">
-              {/* Fullscreen / Minimize Toggle Button */}
-              <button
-                type="button"
-                onClick={() => setIsFullscreen(!isFullscreen)}
-                aria-label={isFullscreen ? "Exit fullscreen" : "Expand to fullscreen"}
-                title={isFullscreen ? "Exit fullscreen" : "Expand to fullscreen"}
-                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
-              >
-                {isFullscreen ? (
-                  <Minimize2 className="w-3.5 h-3.5" />
-                ) : (
-                  <Maximize2 className="w-3.5 h-3.5" />
-                )}
-              </button>
+            {!isEmbedded && (
+              <div className="flex items-center gap-1">
+                {/* Fullscreen / Minimize Toggle Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsFullscreen(!isFullscreen)}
+                  aria-label={isFullscreen ? "Exit fullscreen" : "Expand to fullscreen"}
+                  title={isFullscreen ? "Exit fullscreen" : "Expand to fullscreen"}
+                  className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  {isFullscreen ? (
+                    <Minimize2 className="w-3.5 h-3.5" />
+                  ) : (
+                    <Maximize2 className="w-3.5 h-3.5" />
+                  )}
+                </button>
 
-              {/* Close Button */}
-              <button
-                type="button"
-                onClick={handleClose}
-                aria-label="Close Chat"
-                title="Close (Esc)"
-                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white flex items-center justify-center transition-colors text-sm cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+                {/* Close Button */}
+                <button
+                  type="button"
+                  onClick={handleClose}
+                  aria-label="Close Chat"
+                  title="Close (Esc)"
+                  className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white flex items-center justify-center transition-colors text-sm cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </header>
 
           {/* Voice Error Notification Banner */}

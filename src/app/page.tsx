@@ -1,9 +1,8 @@
 "use client";
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import About from "@/components/About";
 import MultiShapeMorph from "@/components/background/MultiShapeMorph";
-import Chatbot from "@/components/Bot";
-import LiveChatWidget from "@/components/LiveChat/LiveChatWidget";
+import UnifiedChatModal from "@/components/UnifiedChat/UnifiedChatModal";
 import Contact from "@/components/Contact";
 import Experience from "@/components/Experience";
 import Hero from "@/components/Hero";
@@ -13,29 +12,16 @@ import Works from "@/components/Works";
 import Commands from "@/components/Commands";
 
 export default function Home() {
-  // Coordinated mutual-exclusion state for floating chat panels
-  const [activeChat, setActiveChat] = useState<"none" | "chatbot" | "livechat">("none");
+  const [initialTab, setInitialTab] = useState<"chatbot" | "livechat">("chatbot");
 
-  // Auto-open live chat if visited via notification email link (?live_chat=open)
+  // Auto-switch to live chat tab if visited via notification email link (?live_chat=open)
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       if (params.get("live_chat") === "open") {
-        setActiveChat("livechat");
+        setInitialTab("livechat");
       }
     }
-  }, []);
-
-  const toggleChatbot = useCallback(() => {
-    setActiveChat((prev) => (prev === "chatbot" ? "none" : "chatbot"));
-  }, []);
-
-  const toggleLiveChat = useCallback(() => {
-    setActiveChat((prev) => (prev === "livechat" ? "none" : "livechat"));
-  }, []);
-
-  const closeChat = useCallback(() => {
-    setActiveChat("none");
   }, []);
 
   return (
@@ -56,18 +42,8 @@ export default function Home() {
       </MultiShapeMorph>
       <Works />
       <Commands />
-      {/* AI Assistant Chatbot */}
-      <Chatbot
-        isOpen={activeChat === "chatbot"}
-        onToggle={toggleChatbot}
-        onClose={closeChat}
-      />
-      {/* Direct Live Visitor Chat System */}
-      <LiveChatWidget
-        isOpen={activeChat === "livechat"}
-        onToggle={toggleLiveChat}
-        onClose={closeChat}
-      />
+      {/* Unified Floating Chat Window: AI Assistant & Direct Live Chat */}
+      <UnifiedChatModal initialTab={initialTab} />
       <Contact />
     </div>
   );

@@ -23,6 +23,7 @@ import {
   redhat,
   imuii,
   uomcodl,
+  psr,
   devtown,
   eminent,
   threejs,
@@ -73,7 +74,7 @@ export const experiences = [
   {
     title: "B.E. Computer Science & Engineering",
     company_name: "P.S.R Engineering College, Sivakasi",
-    icon: uomcodl,
+    icon: psr,
     iconBg: "#F0F8FF",
     date: "2020 - 2024",
     score: "9.1 CGPA",

@@ -27,6 +27,10 @@ import {
   FileSpreadsheet,
   Clock,
   Info,
+  User,
+  LogOut,
+  Key,
+  ShieldAlert,
 } from "lucide-react";
 import LIVE_CHAT_ICON from "../../../public/assets/bot/Livechatbot.svg";
 import TelegramEmojiPicker from "./TelegramEmojiPicker";
@@ -82,15 +86,21 @@ interface LiveChatWidgetProps {
   isOpen?: boolean;
   onToggle?: () => void;
   onClose?: () => void;
+  isEmbedded?: boolean;
+  isFullscreen?: boolean;
+  onUnreadCountChange?: (count: number) => void;
 }
 
 export default function LiveChatWidget({
   isOpen: controlledIsOpen,
   onToggle: controlledOnToggle,
   onClose: controlledOnClose,
+  isEmbedded = false,
+  isFullscreen: controlledIsFullscreen,
+  onUnreadCountChange,
 }: LiveChatWidgetProps = {}) {
   const [internalIsOpen, setInternalIsOpen] = useState(false);
-  const isOpen = typeof controlledIsOpen === "boolean" ? controlledIsOpen : internalIsOpen;
+  const isOpen = isEmbedded ? true : (typeof controlledIsOpen === "boolean" ? controlledIsOpen : internalIsOpen);
 
   const handleToggle = useCallback(() => {
     if (controlledOnToggle) {
@@ -118,7 +128,10 @@ export default function LiveChatWidget({
     }
   }, [controlledIsOpen, controlledOnToggle]);
 
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [internalIsFullscreen, setInternalIsFullscreen] = useState(false);
+  const isFullscreen = typeof controlledIsFullscreen === "boolean" ? controlledIsFullscreen : internalIsFullscreen;
+  const setIsFullscreen = setInternalIsFullscreen;
+
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -152,6 +165,25 @@ export default function LiveChatWidget({
   const [profileError, setProfileError] = useState("");
   const [profileSuccess, setProfileSuccess] = useState(false);
   const [dismissedRetentionNotice, setDismissedRetentionNotice] = useState(false);
+
+  // Sync unreadCount with parent if embedded
+  useEffect(() => {
+    if (onUnreadCountChange) {
+      onUnreadCountChange(unreadCount);
+    }
+  }, [unreadCount, onUnreadCountChange]);
+
+  // Account Management state
+  const [modalTab, setModalTab] = useState<"account" | "settings">("account");
+  const [authMode, setAuthMode] = useState<"signin" | "signup" | "forgot">("signin");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authName, setAuthName] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [authSuccess, setAuthSuccess] = useState("");
+  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
 
   // OTP Verification State
   const [otpCode, setOtpCode] = useState("");
@@ -825,6 +857,177 @@ export default function LiveChatWidget({
     }
   };
 
+  // Account Management: Sign In
+  const handleAuthSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authEmail || !authPassword) return;
+    setIsAuthSubmitting(true);
+    setAuthError("");
+    setAuthSuccess("");
+
+    try {
+      const res = await fetch("/api/live-chat/auth/signin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: authEmail, password: authPassword }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setProfile((prev) => ({
+          ...prev,
+          visitorEmail: data.account.email,
+          visitorName: data.account.name || prev.visitorName,
+          emailVerified: true,
+        }));
+        setProfileForm((prev) => ({
+          ...prev,
+          visitorEmail: data.account.email,
+          visitorName: data.account.name || prev.visitorName,
+          emailVerified: true,
+        }));
+        if (data.conversationId) {
+          setConversationId(data.conversationId);
+        }
+        setAuthSuccess("Signed in successfully!");
+        setAuthPassword("");
+        setTimeout(() => setShowProfileModal(false), 900);
+      } else {
+        setAuthError(data.error || "Failed to sign in.");
+      }
+    } catch {
+      setAuthError("Network error. Please try again.");
+    } finally {
+      setIsAuthSubmitting(false);
+    }
+  };
+
+  // Account Management: Sign Up
+  const handleAuthSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authEmail || !authPassword) return;
+    setIsAuthSubmitting(true);
+    setAuthError("");
+    setAuthSuccess("");
+
+    try {
+      const res = await fetch("/api/live-chat/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: authEmail, password: authPassword, name: authName }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setProfile((prev) => ({
+          ...prev,
+          visitorEmail: data.account.email,
+          visitorName: data.account.name || prev.visitorName,
+          emailVerified: true,
+        }));
+        setProfileForm((prev) => ({
+          ...prev,
+          visitorEmail: data.account.email,
+          visitorName: data.account.name || prev.visitorName,
+          emailVerified: true,
+        }));
+        if (data.conversationId) {
+          setConversationId(data.conversationId);
+        }
+        setAuthSuccess("Account created successfully!");
+        setAuthPassword("");
+        setTimeout(() => setShowProfileModal(false), 900);
+      } else {
+        setAuthError(data.error || "Failed to create account.");
+      }
+    } catch {
+      setAuthError("Network error. Please try again.");
+    } finally {
+      setIsAuthSubmitting(false);
+    }
+  };
+
+  // Account Management: Forgot Password
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authEmail) return;
+    setIsAuthSubmitting(true);
+    setAuthError("");
+    setAuthSuccess("");
+
+    try {
+      const res = await fetch("/api/live-chat/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: authEmail }),
+      });
+      const data = await res.json();
+      setAuthSuccess(data.message || "Password reset request submitted.");
+    } catch {
+      setAuthError("Network error. Please try again.");
+    } finally {
+      setIsAuthSubmitting(false);
+    }
+  };
+
+  // Account Management: Logout
+  const handleVisitorLogout = async () => {
+    setIsAuthSubmitting(true);
+    try {
+      await fetch("/api/live-chat/auth/logout", { method: "POST" });
+      setProfile({
+        visitorName: "Visitor",
+        visitorEmail: "",
+        emailVerified: false,
+        emailNotificationsEnabled: false,
+      });
+      setProfileForm({
+        visitorName: "",
+        visitorEmail: "",
+        emailVerified: false,
+        emailNotificationsEnabled: false,
+      });
+      setAuthSuccess("Logged out successfully.");
+    } catch {
+      setAuthError("Failed to log out.");
+    } finally {
+      setIsAuthSubmitting(false);
+    }
+  };
+
+  // Account Management: Delete Account
+  const handleVisitorDeleteAccount = async () => {
+    if (!deletePassword) return;
+    setIsAuthSubmitting(true);
+    setAuthError("");
+
+    try {
+      const res = await fetch("/api/live-chat/auth/delete-account", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: deletePassword }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setProfile({
+          visitorName: "Visitor",
+          visitorEmail: "",
+          emailVerified: false,
+          emailNotificationsEnabled: false,
+        });
+        setMessages([]);
+        setShowDeleteConfirm(false);
+        setDeletePassword("");
+        setAuthSuccess("Account deleted successfully.");
+        setTimeout(() => setShowProfileModal(false), 1200);
+      } else {
+        setAuthError(data.error || "Failed to delete account.");
+      }
+    } catch {
+      setAuthError("Network error. Please try again.");
+    } finally {
+      setIsAuthSubmitting(false);
+    }
+  };
+
   const isCurrentEmailVerified =
     profile.emailVerified &&
     profile.visitorEmail.toLowerCase().trim() === profileForm.visitorEmail.toLowerCase().trim() &&
@@ -850,43 +1053,45 @@ export default function LiveChatWidget({
         </div>
       )}
 
-      {/* Floating Launcher Trigger Pill */}
-      <button
-        ref={launcherRef}
-        type="button"
-        onClick={() => {
-          handleToggle();
-          if (!isOpen && unreadCount > 0) {
-            setUnreadCount(0);
-          }
-        }}
-        aria-label="Live Chat with Ganganathan"
-        aria-expanded={isOpen}
-        title="Live Chat with Ganganathan"
-        className="fixed bottom-6 right-22 sm:bottom-8 sm:right-26 z-40 p-2 rounded-full bg-[#0e1621]/90 backdrop-blur-md border border-cyan-500/30 hover:border-cyan-400 hover:scale-105 active:scale-95 transition-all flex items-center justify-center cursor-pointer shadow-xl group"
-      >
-        <Image
-          src={LIVE_CHAT_ICON}
-          alt="Live Chat"
-          width={56}
-          height={56}
-          className="object-contain drop-shadow-2xl w-12 h-12 sm:w-14 sm:h-14 transition-transform group-hover:scale-110"
-        />
-        <span className="sr-only">Toggle Live Chat with Ganganathan</span>
+      {/* Floating Launcher Trigger Pill (Standalone mode only) */}
+      {!isEmbedded && (
+        <button
+          ref={launcherRef}
+          type="button"
+          onClick={() => {
+            handleToggle();
+            if (!isOpen && unreadCount > 0) {
+              setUnreadCount(0);
+            }
+          }}
+          aria-label="Live Chat with Ganganathan"
+          aria-expanded={isOpen}
+          title="Live Chat with Ganganathan"
+          className="fixed bottom-6 right-22 sm:bottom-8 sm:right-26 z-40 p-2 rounded-full bg-[#0e1621]/90 backdrop-blur-md border border-cyan-500/30 hover:border-cyan-400 hover:scale-105 active:scale-95 transition-all flex items-center justify-center cursor-pointer shadow-xl group"
+        >
+          <Image
+            src={LIVE_CHAT_ICON}
+            alt="Live Chat"
+            width={56}
+            height={56}
+            className="object-contain drop-shadow-2xl w-12 h-12 sm:w-14 sm:h-14 transition-transform group-hover:scale-110"
+          />
+          <span className="sr-only">Toggle Live Chat with Ganganathan</span>
 
-        {/* Online pulse indicator */}
-        <span className="absolute -top-1 -right-1 flex h-3 w-3">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-400"></span>
-        </span>
-
-        {/* Unread badge */}
-        {unreadCount > 0 && !isOpen && (
-          <span className="absolute -top-2 -left-2 bg-pink-500 text-white font-bold text-[10px] w-5 h-5 rounded-full flex items-center justify-center border-2 border-[#0e1621] animate-bounce shadow-md">
-            {unreadCount}
+          {/* Online pulse indicator */}
+          <span className="absolute -top-1 -right-1 flex h-3 w-3">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-400"></span>
           </span>
-        )}
-      </button>
+
+          {/* Unread badge */}
+          {unreadCount > 0 && !isOpen && (
+            <span className="absolute -top-2 -left-2 bg-pink-500 text-white font-bold text-[10px] w-5 h-5 rounded-full flex items-center justify-center border-2 border-[#0e1621] animate-bounce shadow-md">
+              {unreadCount}
+            </span>
+          )}
+        </button>
+      )}
 
       {/* Telegram-Inspired Live Chat Window */}
       {isOpen && (
@@ -894,10 +1099,12 @@ export default function LiveChatWidget({
           ref={chatRef}
           data-lenis-prevent
           data-lenis-prevent-touch
-          role="dialog"
+          role={isEmbedded ? "region" : "dialog"}
           aria-label="Telegram Live Chat"
           className={
-            isFullscreen
+            isEmbedded
+              ? "flex-1 w-full h-full bg-[#0e1621] flex flex-col overflow-hidden text-white font-sans select-none"
+              : isFullscreen
               ? "fixed inset-0 z-50 w-screen h-screen md:h-[100dvh] bg-[#0e1621] shadow-2xl flex flex-col overflow-hidden text-white font-sans select-none animate-in fade-in duration-200"
               : "fixed bottom-24 right-4 sm:right-24 w-[calc(100vw-2rem)] sm:w-96 md:w-[420px] h-[78vh] max-h-[640px] z-50 rounded-2xl border border-white/10 bg-[#0e1621] shadow-2xl flex flex-col overflow-hidden text-white font-sans select-none"
           }
@@ -946,36 +1153,44 @@ export default function LiveChatWidget({
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => setShowProfileModal(true)}
-                title="Chat & Notification Settings"
+                onClick={() => {
+                  setShowProfileModal(true);
+                  setAuthError("");
+                  setAuthSuccess("");
+                }}
+                title="Account & Notification Settings"
                 className="w-8 h-8 rounded-full text-gray-400 hover:text-cyan-300 hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer"
               >
-                <Settings className="w-4 h-4" />
+                {profile.emailVerified ? <User className="w-4 h-4 text-cyan-400" /> : <Settings className="w-4 h-4" />}
               </button>
 
-              {/* Fullscreen / Minimize Toggle Button */}
-              <button
-                type="button"
-                onClick={() => setIsFullscreen(!isFullscreen)}
-                aria-label={isFullscreen ? "Exit fullscreen" : "Expand to fullscreen"}
-                title={isFullscreen ? "Exit fullscreen" : "Expand to fullscreen"}
-                className="w-8 h-8 rounded-full text-gray-400 hover:text-white hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer"
-              >
-                {isFullscreen ? (
-                  <Minimize2 className="w-4 h-4" />
-                ) : (
-                  <Maximize2 className="w-4 h-4" />
-                )}
-              </button>
+              {!isEmbedded && (
+                <>
+                  {/* Fullscreen / Minimize Toggle Button */}
+                  <button
+                    type="button"
+                    onClick={() => setIsFullscreen(!isFullscreen)}
+                    aria-label={isFullscreen ? "Exit fullscreen" : "Expand to fullscreen"}
+                    title={isFullscreen ? "Exit fullscreen" : "Expand to fullscreen"}
+                    className="w-8 h-8 rounded-full text-gray-400 hover:text-white hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer"
+                  >
+                    {isFullscreen ? (
+                      <Minimize2 className="w-4 h-4" />
+                    ) : (
+                      <Maximize2 className="w-4 h-4" />
+                    )}
+                  </button>
 
-              <button
-                type="button"
-                onClick={handleClose}
-                title="Close Chat (Esc)"
-                className="w-8 h-8 rounded-full text-gray-400 hover:text-white hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
+                  <button
+                    type="button"
+                    onClick={handleClose}
+                    title="Close Chat (Esc)"
+                    className="w-8 h-8 rounded-full text-gray-400 hover:text-white hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </>
+              )}
             </div>
           </header>
 
@@ -1032,174 +1247,433 @@ export default function LiveChatWidget({
             </div>
           )}
 
-          {/* Profile / OTP Settings Modal */}
+          {/* Profile / Account Settings Modal */}
           {showProfileModal && (
             <div className="absolute inset-0 z-40 bg-black/85 backdrop-blur-xs p-4 flex flex-col justify-center items-center overflow-y-auto">
-              <div className="bg-[#17212b] border border-white/10 rounded-2xl p-5 w-full max-w-sm shadow-2xl space-y-4">
+              <div className="bg-[#17212b] border border-white/10 rounded-2xl p-5 w-full max-w-sm shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
                 <div className="flex justify-between items-center border-b border-white/10 pb-2.5">
                   <div>
-                    <h4 className="text-white font-bold text-sm">Chat Settings & Alerts</h4>
-                    <p className="text-[10px] text-gray-400">Guest chat is private to this browser session.</p>
+                    <h4 className="text-white font-bold text-sm">Account & Preferences</h4>
+                    <p className="text-[10px] text-gray-400">Single active session security</p>
                   </div>
                   <button
                     type="button"
-                    onClick={() => setShowProfileModal(false)}
+                    onClick={() => {
+                      setShowProfileModal(false);
+                      setShowDeleteConfirm(false);
+                    }}
                     className="text-gray-400 hover:text-white p-1 cursor-pointer"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
 
-                <form onSubmit={handleSaveProfile} className="space-y-3 text-xs">
-                  <div>
-                    <label className="text-gray-400 block mb-1 font-mono">Your Name (Optional)</label>
-                    <input
-                      type="text"
-                      maxLength={60}
-                      value={profileForm.visitorName}
-                      onChange={(e) =>
-                        setProfileForm({ ...profileForm, visitorName: e.target.value })
-                      }
-                      placeholder="e.g. Recruiter / Colleague"
-                      className="w-full bg-[#0e1621] border border-white/10 rounded-xl px-3 py-2 text-white outline-none focus:border-cyan-400"
-                    />
-                  </div>
+                {/* Tab Switcher */}
+                <div className="flex bg-[#0e1621] p-1 rounded-xl text-xs font-mono border border-white/5">
+                  <button
+                    type="button"
+                    onClick={() => setModalTab("account")}
+                    className={`flex-1 py-1.5 rounded-lg text-center transition-colors cursor-pointer ${
+                      modalTab === "account" ? "bg-cyan-500 text-black font-bold" : "text-gray-400 hover:text-white"
+                    }`}
+                  >
+                    Account
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModalTab("settings")}
+                    className={`flex-1 py-1.5 rounded-lg text-center transition-colors cursor-pointer ${
+                      modalTab === "settings" ? "bg-cyan-500 text-black font-bold" : "text-gray-400 hover:text-white"
+                    }`}
+                  >
+                    Preferences
+                  </button>
+                </div>
 
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="text-gray-400 font-mono">Your Email (Optional)</label>
-                      {isCurrentEmailVerified && (
-                        <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-full font-mono flex items-center gap-1">
-                          <Check className="w-2.5 h-2.5" /> Verified
-                        </span>
-                      )}
-                    </div>
-                    <input
-                      type="email"
-                      value={profileForm.visitorEmail}
-                      onChange={(e) => {
-                        setProfileForm({ ...profileForm, visitorEmail: e.target.value });
-                        setOtpSent(false);
-                        setOtpMessage("");
-                        setOtpError("");
-                      }}
-                      placeholder="you@example.com"
-                      className="w-full bg-[#0e1621] border border-white/10 rounded-xl px-3 py-2 text-white outline-none focus:border-cyan-400"
-                    />
-                    <p className="text-[10px] text-gray-500 mt-1">
-                      Leave empty to continue chatting anonymously.
-                    </p>
-                  </div>
+                {modalTab === "account" ? (
+                  <div className="space-y-3 text-xs">
+                    {profile.emailVerified && profile.visitorEmail ? (
+                      /* Authenticated User Profile View */
+                      <div className="space-y-3">
+                        <div className="bg-[#0e1621] border border-cyan-500/20 rounded-xl p-3 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-cyan-500/20 text-cyan-300 flex items-center justify-center font-bold text-xs">
+                              {profile.visitorName.slice(0, 1).toUpperCase() || "U"}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="font-bold text-white text-xs truncate">{profile.visitorName}</p>
+                              <p className="text-[11px] text-gray-400 truncate font-mono">{profile.visitorEmail}</p>
+                            </div>
+                            <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-full font-mono flex items-center gap-1 shrink-0">
+                              <Check className="w-2.5 h-2.5" /> Active
+                            </span>
+                          </div>
+                        </div>
 
-                  {/* OTP Verification Section */}
-                  {profileForm.visitorEmail.trim() !== "" && !isCurrentEmailVerified && (
-                    <div className="bg-[#0e1621] border border-cyan-500/20 rounded-xl p-3 space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-cyan-300">
-                          Verify Email for Alerts & History Restoration
-                        </span>
-                        <button
-                          type="button"
-                          disabled={otpSending || otpCooldown > 0}
-                          onClick={handleRequestOtp}
-                          className="bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 px-2.5 py-1 rounded-lg text-[10px] font-mono transition-colors disabled:opacity-40 cursor-pointer"
-                        >
-                          {otpSending
-                            ? "Sending..."
-                            : otpCooldown > 0
-                            ? `Resend in ${otpCooldown}s`
-                            : "Send OTP Code"}
-                        </button>
-                      </div>
-
-                      {otpSent && (
-                        <div className="flex gap-2 items-center pt-1">
-                          <input
-                            type="text"
-                            maxLength={6}
-                            value={otpCode}
-                            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
-                            placeholder="6-digit code"
-                            className="w-32 bg-black/60 border border-cyan-500/40 rounded-lg px-2.5 py-1 text-center font-mono text-cyan-300 tracking-wider text-xs outline-none focus:border-cyan-400"
-                          />
+                        <div className="flex gap-2">
                           <button
                             type="button"
-                            disabled={otpVerifying || otpCode.length !== 6}
-                            onClick={handleVerifyOtp}
-                            className="bg-emerald-500 hover:bg-emerald-400 text-black font-bold px-3 py-1 rounded-lg text-xs transition-colors disabled:opacity-40 cursor-pointer"
+                            disabled={isAuthSubmitting}
+                            onClick={handleVisitorLogout}
+                            className="flex-1 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white py-2 rounded-xl text-xs font-mono transition-colors flex items-center justify-center gap-1.5 cursor-pointer border border-white/10"
                           >
-                            {otpVerifying ? "..." : "Verify"}
+                            <LogOut className="w-3.5 h-3.5" />
+                            <span>Sign Out</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowDeleteConfirm(!showDeleteConfirm)}
+                            className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-3 py-2 rounded-xl text-xs font-mono transition-colors cursor-pointer"
+                          >
+                            Delete
                           </button>
                         </div>
-                      )}
 
-                      {otpMessage && <p className="text-emerald-400 text-[10px]">{otpMessage}</p>}
-                      {otpError && <p className="text-red-400 text-[10px]">{otpError}</p>}
-                    </div>
-                  )}
+                        {showDeleteConfirm && (
+                          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 space-y-2 mt-2">
+                            <p className="text-red-300 font-bold text-[11px]">Confirm Account Deletion</p>
+                            <p className="text-gray-400 text-[10px] leading-relaxed">
+                              Enter your current password to permanently delete your account and chat data.
+                            </p>
+                            <input
+                              type="password"
+                              value={deletePassword}
+                              onChange={(e) => setDeletePassword(e.target.value)}
+                              placeholder="Your password..."
+                              className="w-full bg-[#0e1621] border border-red-500/30 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-red-400"
+                            />
+                            <div className="flex justify-end gap-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => setShowDeleteConfirm(false)}
+                                className="px-2.5 py-1 text-gray-400 hover:text-white text-[11px]"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isAuthSubmitting || !deletePassword}
+                                onClick={handleVisitorDeleteAccount}
+                                className="bg-red-500 hover:bg-red-600 text-white font-bold px-3 py-1 rounded-lg text-[11px] disabled:opacity-40 cursor-pointer"
+                              >
+                                {isAuthSubmitting ? "Deleting..." : "Permanently Delete"}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      /* Unauthenticated Form: Sign In, Sign Up, or Forgot Password */
+                      <div>
+                        {authMode !== "forgot" && (
+                          <div className="flex gap-2 mb-3">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAuthMode("signin");
+                                setAuthError("");
+                                setAuthSuccess("");
+                              }}
+                              className={`flex-1 py-1 text-center font-mono text-xs rounded-lg cursor-pointer ${
+                                authMode === "signin" ? "bg-white/10 text-white font-bold" : "text-gray-400 hover:text-white"
+                              }`}
+                            >
+                              Sign In
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAuthMode("signup");
+                                setAuthError("");
+                                setAuthSuccess("");
+                              }}
+                              className={`flex-1 py-1 text-center font-mono text-xs rounded-lg cursor-pointer ${
+                                authMode === "signup" ? "bg-white/10 text-white font-bold" : "text-gray-400 hover:text-white"
+                              }`}
+                            >
+                              Create Account
+                            </button>
+                          </div>
+                        )}
 
-                  {/* Notification Consent */}
-                  <div className="flex items-start gap-2 pt-1">
-                    <input
-                      type="checkbox"
-                      id="emailNotify"
-                      checked={profileForm.emailNotificationsEnabled}
-                      onChange={(e) =>
-                        setProfileForm({
-                          ...profileForm,
-                          emailNotificationsEnabled: e.target.checked,
-                        })
-                      }
-                      className="mt-0.5 rounded accent-cyan-500 cursor-pointer"
-                    />
-                    <label
-                      htmlFor="emailNotify"
-                      className="text-gray-300 text-[11px] leading-snug cursor-pointer select-none"
-                    >
-                      Email me when Ganganathan replies (requires verified email).
-                    </label>
+                        {authMode === "signin" && (
+                          <form onSubmit={handleAuthSignIn} className="space-y-3">
+                            <div>
+                              <label className="text-gray-400 block mb-1 font-mono">Email Address</label>
+                              <input
+                                type="email"
+                                required
+                                value={authEmail}
+                                onChange={(e) => setAuthEmail(e.target.value)}
+                                placeholder="you@example.com"
+                                className="w-full bg-[#0e1621] border border-white/10 rounded-xl px-3 py-2 text-white outline-none focus:border-cyan-400"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-gray-400 block mb-1 font-mono">Password</label>
+                              <input
+                                type="password"
+                                required
+                                value={authPassword}
+                                onChange={(e) => setAuthPassword(e.target.value)}
+                                placeholder="••••••••"
+                                className="w-full bg-[#0e1621] border border-white/10 rounded-xl px-3 py-2 text-white outline-none focus:border-cyan-400"
+                              />
+                            </div>
+                            <div className="flex justify-between items-center text-[10px]">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAuthMode("forgot");
+                                  setAuthError("");
+                                  setAuthSuccess("");
+                                }}
+                                className="text-cyan-400 hover:underline font-mono"
+                              >
+                                Forgot password?
+                              </button>
+                            </div>
+                            <button
+                              type="submit"
+                              disabled={isAuthSubmitting}
+                              className="w-full bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-2 rounded-xl text-xs transition-colors disabled:opacity-40 cursor-pointer"
+                            >
+                              {isAuthSubmitting ? "Signing In..." : "Sign In"}
+                            </button>
+                          </form>
+                        )}
+
+                        {authMode === "signup" && (
+                          <form onSubmit={handleAuthSignUp} className="space-y-3">
+                            <div>
+                              <label className="text-gray-400 block mb-1 font-mono">Your Name (Optional)</label>
+                              <input
+                                type="text"
+                                value={authName}
+                                onChange={(e) => setAuthName(e.target.value)}
+                                placeholder="e.g. Recruiter / Colleague"
+                                className="w-full bg-[#0e1621] border border-white/10 rounded-xl px-3 py-2 text-white outline-none focus:border-cyan-400"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-gray-400 block mb-1 font-mono">Email Address</label>
+                              <input
+                                type="email"
+                                required
+                                value={authEmail}
+                                onChange={(e) => setAuthEmail(e.target.value)}
+                                placeholder="you@example.com"
+                                className="w-full bg-[#0e1621] border border-white/10 rounded-xl px-3 py-2 text-white outline-none focus:border-cyan-400"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-gray-400 block mb-1 font-mono">Password (min 8 chars)</label>
+                              <input
+                                type="password"
+                                required
+                                value={authPassword}
+                                onChange={(e) => setAuthPassword(e.target.value)}
+                                placeholder="Letter & number required"
+                                className="w-full bg-[#0e1621] border border-white/10 rounded-xl px-3 py-2 text-white outline-none focus:border-cyan-400"
+                              />
+                            </div>
+                            <button
+                              type="submit"
+                              disabled={isAuthSubmitting}
+                              className="w-full bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-2 rounded-xl text-xs transition-colors disabled:opacity-40 cursor-pointer"
+                            >
+                              {isAuthSubmitting ? "Creating..." : "Create Account & Sign In"}
+                            </button>
+                          </form>
+                        )}
+
+                        {authMode === "forgot" && (
+                          <form onSubmit={handleForgotPassword} className="space-y-3">
+                            <p className="text-gray-300 text-[11px] leading-relaxed">
+                              Enter your registered email to receive a secure password reset link.
+                            </p>
+                            <div>
+                              <label className="text-gray-400 block mb-1 font-mono">Email Address</label>
+                              <input
+                                type="email"
+                                required
+                                value={authEmail}
+                                onChange={(e) => setAuthEmail(e.target.value)}
+                                placeholder="you@example.com"
+                                className="w-full bg-[#0e1621] border border-white/10 rounded-xl px-3 py-2 text-white outline-none focus:border-cyan-400"
+                              />
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAuthMode("signin");
+                                  setAuthError("");
+                                  setAuthSuccess("");
+                                }}
+                                className="flex-1 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white py-2 rounded-xl text-xs transition-colors cursor-pointer"
+                              >
+                                Back
+                              </button>
+                              <button
+                                type="submit"
+                                disabled={isAuthSubmitting}
+                                className="flex-1 bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-2 rounded-xl text-xs transition-colors disabled:opacity-40 cursor-pointer"
+                              >
+                                {isAuthSubmitting ? "Sending..." : "Reset Link"}
+                              </button>
+                            </div>
+                          </form>
+                        )}
+                      </div>
+                    )}
+
+                    {authError && <p className="text-red-400 text-[11px] pt-1 font-mono">{authError}</p>}
+                    {authSuccess && <p className="text-emerald-400 text-[11px] pt-1 font-mono">{authSuccess}</p>}
                   </div>
-
-                  {profileError && <p className="text-red-400 text-[11px] pt-1">{profileError}</p>}
-                  {profileSuccess && <p className="text-emerald-400 text-[11px] pt-1">Settings saved!</p>}
-
-                  {/* 24-Hour Retention Policy in Settings */}
-                  <div className="bg-[#0e1621] border border-cyan-500/20 rounded-xl p-3 space-y-1">
-                    <div className="flex items-center gap-1.5 text-cyan-300 font-bold text-[11px]">
-                      <Clock className="w-3.5 h-3.5" />
-                      <span>24-Hour Message Retention Policy</span>
+                ) : (
+                  /* Chat Preferences & Guest Settings */
+                  <form onSubmit={handleSaveProfile} className="space-y-3 text-xs">
+                    <div>
+                      <label className="text-gray-400 block mb-1 font-mono">Display Name</label>
+                      <input
+                        type="text"
+                        maxLength={60}
+                        value={profileForm.visitorName}
+                        onChange={(e) =>
+                          setProfileForm({ ...profileForm, visitorName: e.target.value })
+                        }
+                        placeholder="e.g. Recruiter / Colleague"
+                        className="w-full bg-[#0e1621] border border-white/10 rounded-xl px-3 py-2 text-white outline-none focus:border-cyan-400"
+                      />
                     </div>
-                    <p className="text-[10px] text-gray-400 leading-relaxed">
-                      Messages are automatically and permanently deleted 24 hours after they are read by the recipient. Deleted messages cannot be recovered or viewed again.
-                    </p>
-                    {dismissedRetentionNotice && (
+
+                    <div>
+                      <label className="text-gray-400 block mb-1 font-mono">Email</label>
+                      <input
+                        type="email"
+                        value={profileForm.visitorEmail}
+                        onChange={(e) => {
+                          setProfileForm({ ...profileForm, visitorEmail: e.target.value });
+                          setOtpSent(false);
+                          setOtpMessage("");
+                          setOtpError("");
+                        }}
+                        placeholder="you@example.com"
+                        className="w-full bg-[#0e1621] border border-white/10 rounded-xl px-3 py-2 text-white outline-none focus:border-cyan-400"
+                      />
+                    </div>
+
+                    {/* OTP Verification Section for guest email linking */}
+                    {profileForm.visitorEmail.trim() !== "" && !isCurrentEmailVerified && (
+                      <div className="bg-[#0e1621] border border-cyan-500/20 rounded-xl p-3 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-cyan-300">
+                            Verify Email for Alerts
+                          </span>
+                          <button
+                            type="button"
+                            disabled={otpSending || otpCooldown > 0}
+                            onClick={handleRequestOtp}
+                            className="bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 px-2.5 py-1 rounded-lg text-[10px] font-mono transition-colors disabled:opacity-40 cursor-pointer"
+                          >
+                            {otpSending
+                              ? "Sending..."
+                              : otpCooldown > 0
+                              ? `Resend in ${otpCooldown}s`
+                              : "Send OTP"}
+                          </button>
+                        </div>
+
+                        {otpSent && (
+                          <div className="flex gap-2 items-center pt-1">
+                            <input
+                              type="text"
+                              maxLength={6}
+                              value={otpCode}
+                              onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                              placeholder="6-digit code"
+                              className="w-32 bg-black/60 border border-cyan-500/40 rounded-lg px-2.5 py-1 text-center font-mono text-cyan-300 tracking-wider text-xs outline-none focus:border-cyan-400"
+                            />
+                            <button
+                              type="button"
+                              disabled={otpVerifying || otpCode.length !== 6}
+                              onClick={handleVerifyOtp}
+                              className="bg-emerald-500 hover:bg-emerald-400 text-black font-bold px-3 py-1 rounded-lg text-xs transition-colors disabled:opacity-40 cursor-pointer"
+                            >
+                              {otpVerifying ? "..." : "Verify"}
+                            </button>
+                          </div>
+                        )}
+
+                        {otpMessage && <p className="text-emerald-400 text-[10px]">{otpMessage}</p>}
+                        {otpError && <p className="text-red-400 text-[10px]">{otpError}</p>}
+                      </div>
+                    )}
+
+                    {/* Notification Consent */}
+                    <div className="flex items-start gap-2 pt-1">
+                      <input
+                        type="checkbox"
+                        id="emailNotify"
+                        checked={profileForm.emailNotificationsEnabled}
+                        onChange={(e) =>
+                          setProfileForm({
+                            ...profileForm,
+                            emailNotificationsEnabled: e.target.checked,
+                          })
+                        }
+                        className="mt-0.5 rounded accent-cyan-500 cursor-pointer"
+                      />
+                      <label
+                        htmlFor="emailNotify"
+                        className="text-gray-300 text-[11px] leading-snug cursor-pointer select-none"
+                      >
+                        Email me when Ganganathan replies (requires verified email).
+                      </label>
+                    </div>
+
+                    {profileError && <p className="text-red-400 text-[11px] pt-1">{profileError}</p>}
+                    {profileSuccess && <p className="text-emerald-400 text-[11px] pt-1">Settings saved!</p>}
+
+                    {/* 24-Hour Retention Policy in Settings */}
+                    <div className="bg-[#0e1621] border border-cyan-500/20 rounded-xl p-3 space-y-1">
+                      <div className="flex items-center gap-1.5 text-cyan-300 font-bold text-[11px]">
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>24-Hour Message Retention Policy</span>
+                      </div>
+                      <p className="text-[10px] text-gray-400 leading-relaxed">
+                        Messages are automatically and permanently deleted 24 hours after they are read by the recipient. Deleted messages cannot be recovered or viewed again.
+                      </p>
+                      {dismissedRetentionNotice && (
+                        <button
+                          type="button"
+                          onClick={() => setDismissedRetentionNotice(false)}
+                          className="text-[10px] text-cyan-400 hover:text-cyan-300 underline font-mono cursor-pointer pt-0.5 block"
+                        >
+                          Restore retention banner in chat
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
                       <button
                         type="button"
-                        onClick={() => setDismissedRetentionNotice(false)}
-                        className="text-[10px] text-cyan-400 hover:text-cyan-300 underline font-mono cursor-pointer pt-0.5 block"
+                        onClick={() => setShowProfileModal(false)}
+                        className="px-3 py-1.5 rounded-lg text-gray-400 hover:text-white cursor-pointer"
                       >
-                        Restore retention banner in chat
+                        Cancel
                       </button>
-                    )}
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
-                    <button
-                      type="button"
-                      onClick={() => setShowProfileModal(false)}
-                      className="px-3 py-1.5 rounded-lg text-gray-400 hover:text-white cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={profileSaving}
-                      className="bg-cyan-500 hover:bg-cyan-400 text-black font-bold px-4 py-1.5 rounded-lg disabled:opacity-50 cursor-pointer"
-                    >
-                      {profileSaving ? "Saving..." : "Save Settings"}
-                    </button>
-                  </div>
-                </form>
+                      <button
+                        type="submit"
+                        disabled={profileSaving}
+                        className="bg-cyan-500 hover:bg-cyan-400 text-black font-bold px-4 py-1.5 rounded-lg disabled:opacity-50 cursor-pointer"
+                      >
+                        {profileSaving ? "Saving..." : "Save Preferences"}
+                      </button>
+                    </div>
+                  </form>
+                )}
               </div>
             </div>
           )}

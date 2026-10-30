@@ -39,6 +39,7 @@ import {
   Smartphone,
   Tablet,
   MapPin,
+  Terminal,
 } from "lucide-react";
 import TelegramEmojiPicker from "@/components/LiveChat/TelegramEmojiPicker";
 import AttachmentViewerModal, { type ViewerAttachment } from "@/components/LiveChat/AttachmentViewerModal";
@@ -1180,6 +1181,20 @@ export default function AdminInboxPage({
               </div>
 
               <div className="flex items-center gap-1">
+                <Link
+                  href="/admin/login-info"
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-cyan-400 hover:bg-white/5 transition-colors"
+                  title="Session History & Login Info"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                </Link>
+                <Link
+                  href="/admin/commands"
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-cyan-400 hover:bg-white/5 transition-colors"
+                  title="Admin Commands Console"
+                >
+                  <Terminal className="w-4 h-4" />
+                </Link>
                 <Link
                   href="/"
                   className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors"

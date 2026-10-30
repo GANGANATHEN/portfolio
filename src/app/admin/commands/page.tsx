@@ -24,6 +24,7 @@ import {
   Globe,
   Clock,
   ShieldAlert,
+  ShieldCheck,
   SlidersHorizontal,
 } from "lucide-react";
 import type { AdminCommand, CommandStats } from "@/lib/commands/types";
@@ -372,6 +373,13 @@ export default function AdminCommandsPage() {
             >
               <Inbox className="w-4 h-4 text-cyan-400" />
               <span>Live Inbox</span>
+            </Link>
+            <Link
+              href="/admin/login-info"
+              className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-mono text-gray-300 hover:text-white transition-colors flex items-center gap-1.5"
+            >
+              <ShieldCheck className="w-4 h-4 text-cyan-400" />
+              <span>Login Info</span>
             </Link>
             <Link
               href="/"

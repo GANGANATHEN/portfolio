@@ -9,6 +9,7 @@ import {
   ADMIN_COOKIE_NAME,
   createAdminSessionToken,
 } from "../src/lib/live-chat/security.ts";
+import { registerAdminActiveSession } from "../src/lib/live-chat/session-registry.ts";
 
 import { POST as uploadAttachmentPost } from "../src/app/api/live-chat/attachments/route.ts";
 import { GET as getAttachmentStream } from "../src/app/api/live-chat/attachments/[id]/route.ts";
@@ -331,7 +332,7 @@ test("Advanced Live Chat: Editing, Deletion, Reactions, Attachments, and PDF Exp
     const attId = visitorJson.attachment.id;
 
     // B. Visitor with admin session cookie (admin testing visitor chat)
-    const adminToken = createAdminSessionToken();
+    const { token: adminToken } = await registerAdminActiveSession();
     const adminTestingVisitorForm = new FormData();
     adminTestingVisitorForm.append("file", fileBlob, "admin-testing-visitor.png");
 

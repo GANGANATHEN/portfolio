@@ -2,16 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   VISITOR_COOKIE_NAME,
   ADMIN_COOKIE_NAME,
+  hashToken,
 } from "@/lib/live-chat/security";
 import {
   getAttachmentById,
+  getConversationById,
   ATTACHMENTS_DIR,
+  checkSupabaseAvailable,
 } from "@/lib/live-chat/db";
 import {
   validateAdminSession,
   validateVisitorSession,
   createSessionRejectedResponse,
 } from "@/lib/live-chat/session-registry";
+import { getServerSupabase } from "@/lib/supabase";
 import fs from "fs";
 import path from "path";
 
@@ -50,6 +54,24 @@ export async function GET(
       }
       if (authVisitor.valid && authVisitor.conversation && authVisitor.conversation.id === attachment.conversationId) {
         isAuthorized = true;
+      } else if (authVisitor.valid && authVisitor.tokenHash) {
+        // Double check conversation session token hash
+        const conv = await getConversationById(attachment.conversationId);
+        if (conv && conv.sessionTokenHash === authVisitor.tokenHash) {
+          isAuthorized = true;
+        }
+      }
+    }
+
+    // Fallback: If visitor holds valid guest token for this conversation
+    if (!isAuthorized) {
+      const visitorToken = req.cookies.get(VISITOR_COOKIE_NAME)?.value;
+      if (visitorToken && visitorToken.length >= 32) {
+        const tokenHash = hashToken(visitorToken);
+        const conv = await getConversationById(attachment.conversationId);
+        if (conv && conv.sessionTokenHash === tokenHash) {
+          isAuthorized = true;
+        }
       }
     }
 
@@ -60,20 +82,43 @@ export async function GET(
       );
     }
 
-    // 2. Resolve local file path
-    const filePath = path.join(ATTACHMENTS_DIR, attachment.storagePath);
-    if (!fs.existsSync(filePath)) {
-      return NextResponse.json({ error: "File not found on server." }, { status: 404 });
+    let fileBuffer: Buffer | null = null;
+
+    // 2. Fetch file buffer from Supabase Storage first
+    try {
+      const isSupabaseReady = await checkSupabaseAvailable();
+      if (isSupabaseReady) {
+        const serverClient = getServerSupabase();
+        const { data, error } = await serverClient.storage
+          .from("chat-attachments")
+          .download(attachment.storagePath);
+        if (data && !error) {
+          fileBuffer = Buffer.from(await data.arrayBuffer());
+        }
+      }
+    } catch (e) {
+      console.warn("[Attachment Stream] Supabase download fallback:", e);
     }
 
-    const fileBuffer = fs.readFileSync(filePath);
+    // 3. Fall back to local filesystem if not found in Supabase Storage
+    if (!fileBuffer) {
+      const filePath = path.join(/*turbopackIgnore: true*/ ATTACHMENTS_DIR, attachment.storagePath);
+      if (fs.existsSync(filePath)) {
+        fileBuffer = fs.readFileSync(filePath);
+      }
+    }
+
+    if (!fileBuffer) {
+      return NextResponse.json({ error: "Attachment file content not found." }, { status: 404 });
+    }
+
     const isDownload = req.nextUrl.searchParams.get("download") === "true";
     const dispositionType = isDownload ? "attachment" : "inline";
 
     // Safe filename encoding for Content-Disposition
     const safeAsciiName = attachment.fileName.replace(/[^\x20-\x7E]/g, "_");
 
-    return new Response(fileBuffer, {
+    return new Response(new Uint8Array(fileBuffer), {
       status: 200,
       headers: {
         "Content-Type": attachment.mimeType,
@@ -91,4 +136,3 @@ export async function GET(
     );
   }
 }
-

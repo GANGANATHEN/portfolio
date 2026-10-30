@@ -8,6 +8,9 @@ import type {
   VisitorMetadata,
   ActiveSessionRecord,
   SupersededSessionRecord,
+  VisitorAccount,
+  VisitorPasswordReset,
+  AuthSessionHistoryRecord,
 } from "./types";
 import { getServerSupabase } from "../supabase";
 import crypto from "crypto";
@@ -32,6 +35,9 @@ interface PersistentStore {
   archiveBatches: Record<string, ChatArchiveBatch>; // batchId -> ChatArchiveBatch
   activeSessions: Record<string, ActiveSessionRecord>; // `${accountType}:${accountId}` -> ActiveSessionRecord
   supersededSessions: Record<string, SupersededSessionRecord>; // tokenHash -> SupersededSessionRecord
+  visitorAccounts: Record<string, VisitorAccount>; // normalizedEmail -> VisitorAccount
+  passwordResets: Record<string, VisitorPasswordReset>; // tokenHash -> VisitorPasswordReset
+  sessionHistory: Record<string, AuthSessionHistoryRecord>; // id -> AuthSessionHistoryRecord
 }
 
 // In-memory cache synced with disk
@@ -45,6 +51,9 @@ let localStore: PersistentStore = {
   archiveBatches: {},
   activeSessions: {},
   supersededSessions: {},
+  visitorAccounts: {},
+  passwordResets: {},
+  sessionHistory: {},
 };
 
 // Simple in-process mutex to prevent concurrent write races in node
@@ -81,6 +90,9 @@ function initDurableStore(): void {
           archiveBatches: parsed.archiveBatches || {},
           activeSessions: parsed.activeSessions || {},
           supersededSessions: parsed.supersededSessions || {},
+          visitorAccounts: parsed.visitorAccounts || {},
+          passwordResets: parsed.passwordResets || {},
+          sessionHistory: parsed.sessionHistory || {},
         };
       }
     }
@@ -116,7 +128,7 @@ export class DatabaseUnavailableError extends Error {
 }
 
 function shouldEnforceProductionPersistence(): boolean {
-  return process.env.VERCEL === "1" || process.env.REQUIRE_SUPABASE === "true";
+  return process.env.VERCEL === "1" || process.env.REQUIRE_SUPABASE === "true" || process.env.NODE_ENV === "production";
 }
 
 /**
@@ -124,7 +136,7 @@ function shouldEnforceProductionPersistence(): boolean {
  * On Vercel (or when REQUIRE_SUPABASE=true), fails visibly and throws an error if Supabase is unreachable,
  * strictly preventing silent fallback to ephemeral storage in production on Vercel.
  */
-async function checkSupabaseAvailable(): Promise<boolean> {
+export async function checkSupabaseAvailable(): Promise<boolean> {
   const isVercelProduction = shouldEnforceProductionPersistence();
   const now = Date.now();
 
@@ -2563,7 +2575,7 @@ export async function registerActiveSessionRecord(
 
       // If there is an explicit previous token hash to supersede, record it
       if (previousTokenHashToSupersede && previousTokenHashToSupersede !== record.tokenHash) {
-        await serverClient
+        const { error: superError } = await serverClient
           .from("auth_superseded_sessions")
           .upsert({
             session_token_hash: previousTokenHashToSupersede,
@@ -2572,6 +2584,10 @@ export async function registerActiveSessionRecord(
             superseded_at: new Date().toISOString(),
             reason: "superseded_by_new_login",
           });
+
+        if (superError && shouldEnforceProductionPersistence()) {
+          throw new DatabaseUnavailableError(`Supabase auth_superseded_sessions upsert failed: ${superError.message}`);
+        }
       }
 
       // Upsert active session (atomic on conflict (account_type, account_id))
@@ -2596,10 +2612,16 @@ export async function registerActiveSessionRecord(
       if (error && shouldEnforceProductionPersistence()) {
         throw new DatabaseUnavailableError(`Supabase auth_active_sessions upsert failed: ${error.message}`);
       }
+
+      if (shouldEnforceProductionPersistence()) {
+        return normalizedRecord;
+      }
     } catch (e) {
       if (shouldEnforceProductionPersistence()) throw e;
       console.warn("[Live Chat DB] Error upserting session in Supabase, using durable storage:", e);
     }
+  } else if (shouldEnforceProductionPersistence()) {
+    throw new DatabaseUnavailableError("Supabase is required in production but unavailable.");
   }
 
   return runWithLock(() => {
@@ -2623,6 +2645,34 @@ export async function registerActiveSessionRecord(
         reason: "superseded_by_new_login",
       };
     }
+
+    if (existing && existing.sessionId !== record.sessionId) {
+      updateSessionHistoryStatus(existing.sessionId, "superseded", "superseded_by_new_login").catch(() => {});
+    }
+
+    // Automatically record active session history
+    const meta = (record.metadata || {}) as Record<string, any>;
+    recordSessionHistory({
+      sessionId: record.sessionId,
+      accountType: record.accountType,
+      accountId: normAccountId,
+      conversationId: record.conversationId,
+      loginAt: record.createdAt,
+      lastActiveAt: record.lastActiveAt,
+      expiresAt: record.expiresAt,
+      status: "active",
+      deviceType: meta.deviceType,
+      browser: meta.browserFamily,
+      browserVersion: meta.browserVersion,
+      browserEngine: meta.browserEngine,
+      os: meta.osFamily,
+      osVersion: meta.osVersion,
+      ipAddress: meta.ip,
+      country: meta.country,
+      region: meta.region,
+      city: meta.city,
+      metadata: record.metadata,
+    }).catch(() => {});
 
     localStore.activeSessions[key] = normalizedRecord;
     persistStoreToDisk();
@@ -2648,7 +2698,11 @@ export async function getActiveSessionRecord(
         .eq("is_active", true)
         .maybeSingle();
 
-      if (data && !error) {
+      if (error) {
+        if (shouldEnforceProductionPersistence()) {
+          throw new DatabaseUnavailableError(`Supabase auth_active_sessions query failed: ${error.message}`);
+        }
+      } else if (data) {
         return {
           accountType: data.account_type,
           accountId: data.account_id,
@@ -2661,10 +2715,16 @@ export async function getActiveSessionRecord(
           isActive: Boolean(data.is_active),
           metadata: data.metadata || null,
         };
+      } else {
+        if (shouldEnforceProductionPersistence()) {
+          return null;
+        }
       }
     } catch (e) {
       if (shouldEnforceProductionPersistence()) throw e;
     }
+  } else if (shouldEnforceProductionPersistence()) {
+    throw new DatabaseUnavailableError("Supabase is required in production but unavailable.");
   }
 
   const key = `${accountType}:${normAccountId}`;
@@ -2687,7 +2747,11 @@ export async function isSessionTokenSuperseded(
         .eq("session_token_hash", tokenHash)
         .maybeSingle();
 
-      if (data && !error) {
+      if (error) {
+        if (shouldEnforceProductionPersistence()) {
+          throw new DatabaseUnavailableError(`Supabase auth_superseded_sessions query failed: ${error.message}`);
+        }
+      } else if (data) {
         return {
           tokenHash: data.session_token_hash,
           accountType: data.account_type,
@@ -2695,10 +2759,16 @@ export async function isSessionTokenSuperseded(
           supersededAt: data.superseded_at,
           reason: data.reason,
         };
+      } else {
+        if (shouldEnforceProductionPersistence()) {
+          return null;
+        }
       }
     } catch (e) {
       if (shouldEnforceProductionPersistence()) throw e;
     }
+  } else if (shouldEnforceProductionPersistence()) {
+    throw new DatabaseUnavailableError("Supabase is required in production but unavailable.");
   }
 
   return localStore.supersededSessions[tokenHash] || null;
@@ -2718,7 +2788,7 @@ export async function revokeActiveSessionRecord(
       const serverClient = getServerSupabase();
 
       if (tokenHash) {
-        await serverClient
+        const { error: superErr } = await serverClient
           .from("auth_superseded_sessions")
           .upsert({
             session_token_hash: tokenHash,
@@ -2727,9 +2797,13 @@ export async function revokeActiveSessionRecord(
             superseded_at: now,
             reason: "logout",
           });
+
+        if (superErr && shouldEnforceProductionPersistence()) {
+          throw new DatabaseUnavailableError(`Supabase auth_superseded_sessions revoke upsert failed: ${superErr.message}`);
+        }
       }
 
-      await serverClient
+      const { error: activeErr } = await serverClient
         .from("auth_active_sessions")
         .update({
           is_active: false,
@@ -2737,9 +2811,19 @@ export async function revokeActiveSessionRecord(
         })
         .eq("account_type", accountType)
         .eq("account_id", normAccountId);
+
+      if (activeErr && shouldEnforceProductionPersistence()) {
+        throw new DatabaseUnavailableError(`Supabase auth_active_sessions revoke update failed: ${activeErr.message}`);
+      }
+
+      if (shouldEnforceProductionPersistence()) {
+        return true;
+      }
     } catch (e) {
       if (shouldEnforceProductionPersistence()) throw e;
     }
+  } else if (shouldEnforceProductionPersistence()) {
+    throw new DatabaseUnavailableError("Supabase is required in production but unavailable.");
   }
 
   return runWithLock(() => {
@@ -2755,8 +2839,10 @@ export async function revokeActiveSessionRecord(
     }
 
     if (localStore.activeSessions[key]) {
-      localStore.activeSessions[key].isActive = false;
-      localStore.activeSessions[key].lastActiveAt = now;
+      const activeSession = localStore.activeSessions[key];
+      activeSession.isActive = false;
+      activeSession.lastActiveAt = now;
+      updateSessionHistoryStatus(activeSession.sessionId, "logged_out", "logged_out_by_user").catch(() => {});
     }
 
     persistStoreToDisk();
@@ -2798,3 +2884,627 @@ export async function touchActiveSession(
 export function reloadDurableStoreFromDiskForTesting(): void {
   initDurableStore();
 }
+
+// ==============================================================================
+// VISITOR ACCOUNTS
+// ==============================================================================
+
+export async function createVisitorAccount(params: {
+  email: string;
+  passwordHash: string;
+  passwordSalt: string;
+  name?: string | null;
+  emailVerified?: boolean;
+}): Promise<VisitorAccount> {
+  const normalizedEmail = params.email.trim().toLowerCase();
+  const now = new Date().toISOString();
+  const id = crypto.randomUUID();
+
+  const account: VisitorAccount = {
+    id,
+    email: normalizedEmail,
+    passwordHash: params.passwordHash,
+    passwordSalt: params.passwordSalt,
+    name: params.name?.trim() || null,
+    emailVerified: params.emailVerified ?? false,
+    isDeleted: false,
+    deletedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const isSupabaseReady = await checkSupabaseAvailable();
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      const { error } = await serverClient.from("visitor_accounts").insert([
+        {
+          id: account.id,
+          email: account.email,
+          password_hash: account.passwordHash,
+          password_salt: account.passwordSalt,
+          name: account.name,
+          email_verified: account.emailVerified,
+          is_deleted: false,
+          created_at: account.createdAt,
+          updated_at: account.updatedAt,
+        },
+      ]);
+
+      if (error && shouldEnforceProductionPersistence()) {
+        throw new DatabaseUnavailableError(`Supabase visitor_accounts insert failed: ${error.message}`);
+      }
+    } catch (e) {
+      if (shouldEnforceProductionPersistence()) throw e;
+      console.warn("[Live Chat DB] Error inserting visitor account in Supabase:", e);
+    }
+  } else if (shouldEnforceProductionPersistence()) {
+    throw new DatabaseUnavailableError("Supabase is required in production but unavailable.");
+  }
+
+  return runWithLock(() => {
+    localStore.visitorAccounts[normalizedEmail] = account;
+    persistStoreToDisk();
+    return account;
+  });
+}
+
+export async function getVisitorAccountByEmail(email: string): Promise<VisitorAccount | null> {
+  if (!email) return null;
+  const normalizedEmail = email.trim().toLowerCase();
+  const isSupabaseReady = await checkSupabaseAvailable();
+
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      const { data, error } = await serverClient
+        .from("visitor_accounts")
+        .select("*")
+        .eq("email", normalizedEmail)
+        .maybeSingle();
+
+      if (error && shouldEnforceProductionPersistence()) {
+        throw new DatabaseUnavailableError(`Supabase visitor_accounts query failed: ${error.message}`);
+      } else if (data) {
+        return {
+          id: data.id,
+          email: data.email,
+          passwordHash: data.password_hash,
+          passwordSalt: data.password_salt,
+          name: data.name,
+          emailVerified: Boolean(data.email_verified),
+          isDeleted: Boolean(data.is_deleted),
+          deletedAt: data.deleted_at,
+          createdAt: data.created_at,
+          updatedAt: data.updated_at,
+        };
+      } else if (shouldEnforceProductionPersistence()) {
+        return null;
+      }
+    } catch (e) {
+      if (shouldEnforceProductionPersistence()) throw e;
+    }
+  } else if (shouldEnforceProductionPersistence()) {
+    throw new DatabaseUnavailableError("Supabase is required in production but unavailable.");
+  }
+
+  return localStore.visitorAccounts[normalizedEmail] || null;
+}
+
+export async function getVisitorAccountById(id: string): Promise<VisitorAccount | null> {
+  if (!id) return null;
+  const isSupabaseReady = await checkSupabaseAvailable();
+
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      const { data, error } = await serverClient
+        .from("visitor_accounts")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (error && shouldEnforceProductionPersistence()) {
+        throw new DatabaseUnavailableError(`Supabase visitor_accounts query failed: ${error.message}`);
+      } else if (data) {
+        return {
+          id: data.id,
+          email: data.email,
+          passwordHash: data.password_hash,
+          passwordSalt: data.password_salt,
+          name: data.name,
+          emailVerified: Boolean(data.email_verified),
+          isDeleted: Boolean(data.is_deleted),
+          deletedAt: data.deleted_at,
+          createdAt: data.created_at,
+          updatedAt: data.updated_at,
+        };
+      } else if (shouldEnforceProductionPersistence()) {
+        return null;
+      }
+    } catch (e) {
+      if (shouldEnforceProductionPersistence()) throw e;
+    }
+  } else if (shouldEnforceProductionPersistence()) {
+    throw new DatabaseUnavailableError("Supabase is required in production but unavailable.");
+  }
+
+  for (const acc of Object.values(localStore.visitorAccounts)) {
+    if (acc.id === id) return acc;
+  }
+  return null;
+}
+
+export async function updateVisitorAccount(
+  id: string,
+  updates: Partial<Omit<VisitorAccount, "id" | "createdAt">>,
+): Promise<VisitorAccount | null> {
+  const existing = await getVisitorAccountById(id);
+  if (!existing) return null;
+
+  const now = new Date().toISOString();
+  const updated: VisitorAccount = {
+    ...existing,
+    ...updates,
+    updatedAt: now,
+  };
+
+  const isSupabaseReady = await checkSupabaseAvailable();
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      const dbUpdates: Record<string, unknown> = { updated_at: now };
+      if (updates.email !== undefined) dbUpdates.email = updates.email.trim().toLowerCase();
+      if (updates.passwordHash !== undefined) dbUpdates.password_hash = updates.passwordHash;
+      if (updates.passwordSalt !== undefined) dbUpdates.password_salt = updates.passwordSalt;
+      if (updates.name !== undefined) dbUpdates.name = updates.name;
+      if (updates.emailVerified !== undefined) dbUpdates.email_verified = updates.emailVerified;
+      if (updates.isDeleted !== undefined) dbUpdates.is_deleted = updates.isDeleted;
+      if (updates.deletedAt !== undefined) dbUpdates.deleted_at = updates.deletedAt;
+
+      const { error } = await serverClient
+        .from("visitor_accounts")
+        .update(dbUpdates)
+        .eq("id", id);
+
+      if (error && shouldEnforceProductionPersistence()) {
+        throw new DatabaseUnavailableError(`Supabase visitor_accounts update failed: ${error.message}`);
+      }
+    } catch (e) {
+      if (shouldEnforceProductionPersistence()) throw e;
+    }
+  } else if (shouldEnforceProductionPersistence()) {
+    throw new DatabaseUnavailableError("Supabase is required in production but unavailable.");
+  }
+
+  return runWithLock(() => {
+    localStore.visitorAccounts[updated.email] = updated;
+    persistStoreToDisk();
+    return updated;
+  });
+}
+
+export async function deleteVisitorAccount(id: string): Promise<boolean> {
+  const existing = await getVisitorAccountById(id);
+  if (!existing) return false;
+
+  const now = new Date().toISOString();
+  const isSupabaseReady = await checkSupabaseAvailable();
+
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      const { error } = await serverClient
+        .from("visitor_accounts")
+        .update({ is_deleted: true, deleted_at: now, updated_at: now })
+        .eq("id", id);
+
+      if (error && shouldEnforceProductionPersistence()) {
+        throw new DatabaseUnavailableError(`Supabase visitor_accounts delete failed: ${error.message}`);
+      }
+    } catch (e) {
+      if (shouldEnforceProductionPersistence()) throw e;
+    }
+  } else if (shouldEnforceProductionPersistence()) {
+    throw new DatabaseUnavailableError("Supabase is required in production but unavailable.");
+  }
+
+  runWithLock(() => {
+    if (localStore.visitorAccounts[existing.email]) {
+      localStore.visitorAccounts[existing.email].isDeleted = true;
+      localStore.visitorAccounts[existing.email].deletedAt = now;
+      localStore.visitorAccounts[existing.email].updatedAt = now;
+      persistStoreToDisk();
+    }
+  });
+
+  return true;
+}
+
+// ==============================================================================
+// VISITOR PASSWORD RESETS
+// ==============================================================================
+
+export async function createPasswordResetRecord(params: {
+  accountId: string;
+  email: string;
+  tokenHash: string;
+  expiresAt: string;
+}): Promise<VisitorPasswordReset> {
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  const record: VisitorPasswordReset = {
+    id,
+    accountId: params.accountId,
+    email: params.email.trim().toLowerCase(),
+    tokenHash: params.tokenHash,
+    expiresAt: params.expiresAt,
+    usedAt: null,
+    createdAt: now,
+  };
+
+  const isSupabaseReady = await checkSupabaseAvailable();
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      const { error } = await serverClient.from("visitor_password_resets").insert([
+        {
+          id: record.id,
+          account_id: record.accountId,
+          email: record.email,
+          token_hash: record.tokenHash,
+          expires_at: record.expiresAt,
+          used_at: null,
+          created_at: record.createdAt,
+        },
+      ]);
+
+      if (error && shouldEnforceProductionPersistence()) {
+        throw new DatabaseUnavailableError(`Supabase visitor_password_resets insert failed: ${error.message}`);
+      }
+    } catch (e) {
+      if (shouldEnforceProductionPersistence()) throw e;
+    }
+  } else if (shouldEnforceProductionPersistence()) {
+    throw new DatabaseUnavailableError("Supabase is required in production but unavailable.");
+  }
+
+  return runWithLock(() => {
+    localStore.passwordResets[record.tokenHash] = record;
+    persistStoreToDisk();
+    return record;
+  });
+}
+
+export async function getValidPasswordResetByTokenHash(tokenHash: string): Promise<VisitorPasswordReset | null> {
+  if (!tokenHash) return null;
+  const isSupabaseReady = await checkSupabaseAvailable();
+
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      const { data, error } = await serverClient
+        .from("visitor_password_resets")
+        .select("*")
+        .eq("token_hash", tokenHash)
+        .is("used_at", null)
+        .gt("expires_at", new Date().toISOString())
+        .maybeSingle();
+
+      if (error && shouldEnforceProductionPersistence()) {
+        throw new DatabaseUnavailableError(`Supabase visitor_password_resets query failed: ${error.message}`);
+      } else if (data) {
+        return {
+          id: data.id,
+          accountId: data.account_id,
+          email: data.email,
+          tokenHash: data.token_hash,
+          expiresAt: data.expires_at,
+          usedAt: data.used_at,
+          createdAt: data.created_at,
+        };
+      } else if (shouldEnforceProductionPersistence()) {
+        return null;
+      }
+    } catch (e) {
+      if (shouldEnforceProductionPersistence()) throw e;
+    }
+  } else if (shouldEnforceProductionPersistence()) {
+    throw new DatabaseUnavailableError("Supabase is required in production but unavailable.");
+  }
+
+  const r = localStore.passwordResets[tokenHash];
+  if (r && !r.usedAt && new Date(r.expiresAt).getTime() > Date.now()) {
+    return r;
+  }
+  return null;
+}
+
+export async function consumePasswordReset(id: string): Promise<boolean> {
+  const now = new Date().toISOString();
+  const isSupabaseReady = await checkSupabaseAvailable();
+
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      const { error } = await serverClient
+        .from("visitor_password_resets")
+        .update({ used_at: now })
+        .eq("id", id);
+
+      if (error && shouldEnforceProductionPersistence()) {
+        throw new DatabaseUnavailableError(`Supabase visitor_password_resets update failed: ${error.message}`);
+      }
+    } catch (e) {
+      if (shouldEnforceProductionPersistence()) throw e;
+    }
+  } else if (shouldEnforceProductionPersistence()) {
+    throw new DatabaseUnavailableError("Supabase is required in production but unavailable.");
+  }
+
+  runWithLock(() => {
+    for (const r of Object.values(localStore.passwordResets)) {
+      if (r.id === id) {
+        r.usedAt = now;
+        break;
+      }
+    }
+    persistStoreToDisk();
+  });
+
+  return true;
+}
+
+// ==============================================================================
+// AUTH SESSION HISTORY & ADMIN LOGIN INFO
+// ==============================================================================
+
+export async function recordSessionHistory(
+  record: Omit<AuthSessionHistoryRecord, "id">,
+): Promise<AuthSessionHistoryRecord> {
+  const id = crypto.randomUUID();
+  const fullRecord: AuthSessionHistoryRecord = {
+    id,
+    ...record,
+  };
+
+  const isSupabaseReady = await checkSupabaseAvailable();
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      const { error } = await serverClient.from("auth_session_history").insert([
+        {
+          id: fullRecord.id,
+          session_id: fullRecord.sessionId,
+          account_type: fullRecord.accountType,
+          account_id: fullRecord.accountId,
+          conversation_id: fullRecord.conversationId || null,
+          login_at: fullRecord.loginAt,
+          logout_at: fullRecord.logoutAt || null,
+          last_active_at: fullRecord.lastActiveAt,
+          expires_at: fullRecord.expiresAt,
+          status: fullRecord.status,
+          invalidation_reason: fullRecord.invalidationReason || null,
+          device_type: fullRecord.deviceType || null,
+          browser: fullRecord.browser || null,
+          browser_version: fullRecord.browserVersion || null,
+          browser_engine: fullRecord.browserEngine || null,
+          os: fullRecord.os || null,
+          os_version: fullRecord.osVersion || null,
+          ip_address: fullRecord.ipAddress || null,
+          country: fullRecord.country || null,
+          region: fullRecord.region || null,
+          city: fullRecord.city || null,
+          metadata: fullRecord.metadata || null,
+        },
+      ]);
+
+      if (error && shouldEnforceProductionPersistence()) {
+        throw new DatabaseUnavailableError(`Supabase auth_session_history insert failed: ${error.message}`);
+      }
+    } catch (e) {
+      if (shouldEnforceProductionPersistence()) throw e;
+    }
+  }
+
+  return runWithLock(() => {
+    localStore.sessionHistory[id] = fullRecord;
+    persistStoreToDisk();
+    return fullRecord;
+  });
+}
+
+export async function updateSessionHistoryStatus(
+  sessionId: string,
+  status: AuthSessionHistoryRecord["status"],
+  invalidationReason?: string,
+): Promise<void> {
+  const now = new Date().toISOString();
+  const isSupabaseReady = await checkSupabaseAvailable();
+
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      const dbUpdates: Record<string, unknown> = {
+        status,
+        last_active_at: now,
+      };
+      if (status === "logged_out" || status === "superseded") {
+        dbUpdates.logout_at = now;
+      }
+      if (invalidationReason) {
+        dbUpdates.invalidation_reason = invalidationReason;
+      }
+
+      await serverClient
+        .from("auth_session_history")
+        .update(dbUpdates)
+        .eq("session_id", sessionId);
+    } catch {}
+  }
+
+  runWithLock(() => {
+    for (const h of Object.values(localStore.sessionHistory)) {
+      if (h.sessionId === sessionId) {
+        h.status = status;
+        h.lastActiveAt = now;
+        if (status === "logged_out" || status === "superseded") {
+          h.logoutAt = now;
+        }
+        if (invalidationReason) {
+          h.invalidationReason = invalidationReason;
+        }
+      }
+    }
+    persistStoreToDisk();
+  });
+}
+
+export async function getSessionHistory(filter?: {
+  accountType?: string;
+  status?: string;
+  search?: string;
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ records: AuthSessionHistoryRecord[]; total: number }> {
+  const limit = filter?.limit || 20;
+  const offset = filter?.offset || 0;
+  const isSupabaseReady = await checkSupabaseAvailable();
+
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      let query = serverClient
+        .from("auth_session_history")
+        .select("*", { count: "exact" });
+
+      if (filter?.accountType && filter.accountType !== "all") {
+        query = query.eq("account_type", filter.accountType);
+      }
+      if (filter?.status && filter.status !== "all") {
+        query = query.eq("status", filter.status);
+      }
+      if (filter?.search && filter.search.trim()) {
+        const s = filter.search.trim();
+        query = query.or(`account_id.ilike.%${s}%,ip_address.ilike.%${s}%,city.ilike.%${s}%`);
+      }
+      if (filter?.startDate) {
+        query = query.gte("login_at", filter.startDate);
+      }
+      if (filter?.endDate) {
+        query = query.lte("login_at", filter.endDate);
+      }
+
+      query = query.order("login_at", { ascending: false }).range(offset, offset + limit - 1);
+
+      const { data, count, error } = await query;
+      if (!error && data) {
+        const records: AuthSessionHistoryRecord[] = data.map((d) => ({
+          id: d.id,
+          sessionId: d.session_id,
+          accountType: d.account_type,
+          accountId: d.account_id,
+          conversationId: d.conversation_id,
+          loginAt: d.login_at,
+          logoutAt: d.logout_at,
+          lastActiveAt: d.last_active_at,
+          expiresAt: d.expires_at,
+          status: d.status,
+          invalidationReason: d.invalidation_reason,
+          deviceType: d.device_type,
+          browser: d.browser,
+          browserVersion: d.browser_version,
+          browserEngine: d.browser_engine,
+          os: d.os,
+          osVersion: d.os_version,
+          ipAddress: d.ip_address,
+          country: d.country,
+          region: d.region,
+          city: d.city,
+          metadata: d.metadata,
+        }));
+        return { records, total: count || records.length };
+      }
+    } catch {}
+  }
+
+  // Local fallback
+  let all = Object.values(localStore.sessionHistory);
+
+  if (filter?.accountType && filter.accountType !== "all") {
+    all = all.filter((r) => r.accountType === filter.accountType);
+  }
+  if (filter?.status && filter.status !== "all") {
+    all = all.filter((r) => r.status === filter.status);
+  }
+  if (filter?.search && filter.search.trim()) {
+    const s = filter.search.trim().toLowerCase();
+    all = all.filter(
+      (r) =>
+        r.accountId.toLowerCase().includes(s) ||
+        (r.ipAddress && r.ipAddress.toLowerCase().includes(s)) ||
+        (r.city && r.city.toLowerCase().includes(s)) ||
+        (r.browser && r.browser.toLowerCase().includes(s)),
+    );
+  }
+  if (filter?.startDate) {
+    all = all.filter((r) => new Date(r.loginAt) >= new Date(filter.startDate!));
+  }
+  if (filter?.endDate) {
+    all = all.filter((r) => new Date(r.loginAt) <= new Date(filter.endDate!));
+  }
+
+  all.sort((a, b) => new Date(b.loginAt).getTime() - new Date(a.loginAt).getTime());
+  const total = all.length;
+  const records = all.slice(offset, offset + limit);
+  return { records, total };
+}
+
+export async function getActiveSessionsSummary(): Promise<{
+  totalActive: number;
+  adminActive: number;
+  visitorActive: number;
+  totalSuperseded: number;
+}> {
+  const isSupabaseReady = await checkSupabaseAvailable();
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      const { data: activeData } = await serverClient
+        .from("auth_active_sessions")
+        .select("account_type")
+        .eq("is_active", true);
+
+      const { count: superCount } = await serverClient
+        .from("auth_superseded_sessions")
+        .select("*", { count: "exact", head: true });
+
+      const adminActive = activeData ? activeData.filter((a) => a.account_type === "admin").length : 0;
+      const visitorActive = activeData ? activeData.filter((a) => a.account_type === "visitor").length : 0;
+      const totalActive = (activeData?.length || 0);
+
+      return {
+        totalActive,
+        adminActive,
+        visitorActive,
+        totalSuperseded: superCount || 0,
+      };
+    } catch {}
+  }
+
+  const activeList = Object.values(localStore.activeSessions).filter((s) => s.isActive);
+  const adminActive = activeList.filter((s) => s.accountType === "admin").length;
+  const visitorActive = activeList.filter((s) => s.accountType === "visitor").length;
+  const totalSuperseded = Object.keys(localStore.supersededSessions).length;
+
+  return {
+    totalActive: activeList.length,
+    adminActive,
+    visitorActive,
+    totalSuperseded,
+  };
+}
+

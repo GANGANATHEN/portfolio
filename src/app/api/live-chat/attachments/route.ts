@@ -10,12 +10,14 @@ import {
   getConversationById,
   createAttachmentRecord,
   ATTACHMENTS_DIR,
+  checkSupabaseAvailable,
 } from "@/lib/live-chat/db";
 import {
   validateAdminSession,
   validateVisitorSession,
   createSessionRejectedResponse,
 } from "@/lib/live-chat/session-registry";
+import { getServerSupabase } from "@/lib/supabase";
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
@@ -100,22 +102,7 @@ const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50 MB
 
 export async function POST(req: NextRequest) {
   try {
-    // 1. Authenticate either visitor or admin
-    const adminCookie = req.cookies.get(ADMIN_COOKIE_NAME)?.value;
-    let isAdmin = false;
-    if (adminCookie) {
-      const authAdmin = await validateAdminSession(req);
-      if (authAdmin.authenticated) {
-        isAdmin = true;
-      } else if (req.headers.get("content-type")?.includes("multipart/form-data")) {
-        // If an explicit admin request with superseded session
-        const formPreview = await req.clone().formData().catch(() => null);
-        if (formPreview?.get("conversationId")) {
-          return createSessionRejectedResponse(authAdmin, ADMIN_COOKIE_NAME);
-        }
-      }
-    }
-
+    // 1. Safely parse multipart form data once (without destructive stream cloning)
     const formData = await req.formData().catch(() => null);
     if (!formData) {
       return NextResponse.json({ error: "Invalid multipart form data." }, { status: 400 });
@@ -126,10 +113,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing or invalid file." }, { status: 400 });
     }
 
+    const targetId = formData.get("conversationId");
+
+    // 2. Authenticate admin or visitor
+    const adminCookie = req.cookies.get(ADMIN_COOKIE_NAME)?.value;
+    let isAdmin = false;
+    if (adminCookie) {
+      const authAdmin = await validateAdminSession(req);
+      if (authAdmin.authenticated) {
+        isAdmin = true;
+      }
+    }
+
     let conversationId: string | null = null;
     let isNewVisitorSession = false;
     let visitorToken = req.cookies.get(VISITOR_COOKIE_NAME)?.value;
-    const targetId = formData.get("conversationId");
 
     // Case 1: Admin uploading to a specified conversation from Admin Inbox
     if (isAdmin && typeof targetId === "string" && targetId.trim()) {
@@ -181,7 +179,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. Validate & Normalize MIME type
+    // 3. Validate & Normalize MIME type
     const originalName = file.name || "attachment";
     const ext = path.extname(originalName).slice(0, 10).toLowerCase() || "";
     const rawMime = (file.type || "").split(";")[0].trim().toLowerCase();
@@ -203,41 +201,63 @@ export async function POST(req: NextRequest) {
           error:
             "Unsupported file type. Please upload standard images, videos, audio, PDFs, or documents.",
         },
-        { status: 400 },
+        { status: 415 },
       );
     }
 
-    // 3. Validate File Size
+    // 4. Validate File Size
     const isVideo = mimeType.startsWith("video/");
     const maxSize = isVideo ? MAX_VIDEO_SIZE : MAX_DOCUMENT_IMAGE_AUDIO_SIZE;
     if (file.size > maxSize) {
       const limitMb = Math.round(maxSize / (1024 * 1024));
       return NextResponse.json(
         { error: `File exceeds maximum allowed size of ${limitMb}MB.` },
-        { status: 400 },
+        { status: 413 },
       );
     }
 
-    // 4. Sanitize file name & extension
+    // 5. Sanitize file name & extension
     const baseName = path.basename(originalName, ext).replace(/[^a-zA-Z0-9_\-\s]/g, "").slice(0, 80);
     const safeFileName = `${baseName || "file"}${ext}`;
 
     const uniqueId = crypto.randomUUID();
     const storedRelativePath = `${conversationId}/${uniqueId}${ext}`;
-    const destinationFolder = path.join(ATTACHMENTS_DIR, conversationId);
-    const destinationPath = path.join(ATTACHMENTS_DIR, storedRelativePath);
+    const destinationFolder = path.join(/*turbopackIgnore: true*/ ATTACHMENTS_DIR, conversationId);
+    const destinationPath = path.join(/*turbopackIgnore: true*/ ATTACHMENTS_DIR, storedRelativePath);
 
-    // Ensure directory exists
-    if (!fs.existsSync(destinationFolder)) {
-      fs.mkdirSync(destinationFolder, { recursive: true });
-    }
-
-    // Write file to disk
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    fs.writeFileSync(destinationPath, buffer);
 
-    // Save attachment database record
+    // 6. Upload to Supabase Storage if available
+    try {
+      const isSupabaseReady = await checkSupabaseAvailable();
+      if (isSupabaseReady) {
+        const serverClient = getServerSupabase();
+        const { error: storageError } = await serverClient.storage
+          .from("chat-attachments")
+          .upload(storedRelativePath, buffer, {
+            contentType: mimeType,
+            upsert: true,
+          });
+        if (storageError) {
+          console.warn("[Attachment Upload] Supabase Storage upload notice:", storageError.message);
+        }
+      }
+    } catch (storageErr) {
+      console.warn("[Attachment Upload] Supabase Storage exception:", storageErr);
+    }
+
+    // 7. Write to durable local filesystem fallback
+    try {
+      if (!fs.existsSync(destinationFolder)) {
+        fs.mkdirSync(destinationFolder, { recursive: true });
+      }
+      fs.writeFileSync(destinationPath, buffer);
+    } catch (diskErr) {
+      console.warn("[Attachment Upload] Local disk write notice:", diskErr);
+    }
+
+    // 8. Save attachment database record
     const attachment = await createAttachmentRecord({
       conversationId,
       fileName: safeFileName,
@@ -280,4 +300,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-

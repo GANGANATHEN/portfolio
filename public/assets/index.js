@@ -27,6 +27,7 @@ import ibm from "./company/ibm.png";
 import aws from "./company/aws.png";
 import cisco from "./company/CISCO.png";
 import uomcodl from "./company/UOMcodl.png";
+import psr from "./company/psr.jpeg"
 import devtown from "./company/devtown.png";
 import eminent from "./company/eminent.jpeg";
 import imuii from "./company/imuii.jpeg"
@@ -72,6 +73,7 @@ export {
   eminent,
   imuii,
   uomcodl,
+  psr,
   calci,
   ganganathan,
   appleimg,

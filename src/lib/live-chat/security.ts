@@ -200,3 +200,50 @@ export function verifyAdminPassword(candidate: string): boolean {
   }
   return crypto.timingSafeEqual(candidateBuf, configuredBuf);
 }
+
+/**
+ * Hash visitor password securely with unique per-user cryptographically random salt using scrypt.
+ */
+export function hashPassword(password: string, salt?: string): { hash: string; salt: string } {
+  const cleanSalt = salt || crypto.randomBytes(16).toString("hex");
+  const hash = crypto.scryptSync(password, cleanSalt, 64).toString("hex");
+  return { hash, salt: cleanSalt };
+}
+
+/**
+ * Verify visitor password candidate against stored hash using constant-time comparison.
+ */
+export function verifyPassword(password: string, expectedHash: string, salt: string): boolean {
+  try {
+    const { hash } = hashPassword(password, salt);
+    const candidateBuf = Buffer.from(hash, "hex");
+    const expectedBuf = Buffer.from(expectedHash, "hex");
+    if (candidateBuf.length !== expectedBuf.length) return false;
+    return crypto.timingSafeEqual(candidateBuf, expectedBuf);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Generate high-entropy 64-char hex password reset token and SHA-256 hash.
+ */
+export function generatePasswordResetToken(): { token: string; tokenHash: string } {
+  const token = crypto.randomBytes(32).toString("hex");
+  const tokenHash = hashToken(token);
+  return { token, tokenHash };
+}
+
+/**
+ * Validate minimum password complexity: at least 8 chars, containing letter and number.
+ */
+export function isStrongPassword(password: string): { valid: boolean; message?: string } {
+  if (!password || password.length < 8) {
+    return { valid: false, message: "Password must be at least 8 characters long." };
+  }
+  if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+    return { valid: false, message: "Password must contain both letters and numbers." };
+  }
+  return { valid: true };
+}
+

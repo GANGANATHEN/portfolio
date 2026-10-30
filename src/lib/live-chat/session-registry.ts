@@ -18,7 +18,9 @@ import {
   revokeActiveSessionRecord,
   touchActiveSession,
   getConversationByHash,
+  DatabaseUnavailableError,
 } from "./db";
+import { extractVisitorMetadata } from "../metadata";
 import type { ActiveSessionRecord, Conversation } from "./types";
 
 export interface AdminAuthResult {
@@ -38,14 +40,17 @@ export interface VisitorAuthResult {
   error?: string;
   code?: string;
   clearCookie?: boolean;
-  reason?: "NO_TOKEN" | "SUPERSEDED" | "CONVERSATION_NOT_FOUND" | "OK";
+  reason?: "NO_TOKEN" | "SUPERSEDED" | "CONVERSATION_NOT_FOUND" | "OK" | "DATABASE_UNAVAILABLE";
 }
 
 /**
  * Register a single active Admin session.
  * Atomically supersedes any previous admin session.
  */
-export async function registerAdminActiveSession(): Promise<{
+export async function registerAdminActiveSession(
+  req?: NextRequest | { headers: { get(name: string): string | null } },
+  metadata?: Record<string, unknown>,
+): Promise<{
   token: string;
   sessionId: string;
   tokenHash: string;
@@ -61,6 +66,13 @@ export async function registerAdminActiveSession(): Promise<{
   const now = new Date();
   const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
 
+  let sessionMetadata = metadata || null;
+  if (req && !sessionMetadata) {
+    try {
+      sessionMetadata = extractVisitorMetadata(req) as unknown as Record<string, unknown>;
+    } catch {}
+  }
+
   await registerActiveSessionRecord(
     {
       accountType: "admin",
@@ -71,6 +83,7 @@ export async function registerAdminActiveSession(): Promise<{
       lastActiveAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + sevenDaysMs).toISOString(),
       isActive: true,
+      metadata: sessionMetadata,
     },
     prevHash,
   );
@@ -114,65 +127,86 @@ export async function validateAdminSession(
 
   const tokenHash = hashToken(token);
 
-  // 1. Check if this token was explicitly superseded
-  const superseded = await isSessionTokenSuperseded(tokenHash);
-  if (superseded) {
+  try {
+    // 1. Check if this token was explicitly superseded
+    const superseded = await isSessionTokenSuperseded(tokenHash);
+    if (superseded) {
+      return {
+        authenticated: false,
+        error: SESSION_SUPERSEDED_MESSAGE,
+        code: SESSION_SUPERSEDED_CODE,
+        clearCookie: true,
+      };
+    }
+
+    // 2. Query persistent single active session registry
+    let active = await getActiveSessionRecord("admin", "admin");
+    const isProduction =
+      process.env.VERCEL === "1" ||
+      process.env.REQUIRE_SUPABASE === "true" ||
+      process.env.NODE_ENV === "production";
+
+    if (!active && !isProduction) {
+      // Offline / local development only: auto-register token if created via helper
+      active = await registerActiveSessionRecord({
+        accountType: "admin",
+        accountId: "admin",
+        sessionId: parsed.sessionId || crypto.randomUUID(),
+        tokenHash,
+        createdAt: new Date(parsed.timestamp || Date.now()).toISOString(),
+        lastActiveAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        isActive: true,
+      });
+    }
+
+    if (
+      !active ||
+      !active.isActive ||
+      active.tokenHash !== tokenHash ||
+      (parsed.sessionId && active.sessionId !== parsed.sessionId)
+    ) {
+      return {
+        authenticated: false,
+        error: SESSION_SUPERSEDED_MESSAGE,
+        code: SESSION_SUPERSEDED_CODE,
+        clearCookie: true,
+      };
+    }
+
+    // 3. Expiration check
+    if (new Date(active.expiresAt).getTime() < Date.now()) {
+      return {
+        authenticated: false,
+        error: "Admin session expired. Please log in again.",
+        code: SESSION_EXPIRED_CODE,
+        clearCookie: true,
+      };
+    }
+
+    // Touch last active asynchronously
+    touchActiveSession("admin", "admin").catch(() => {});
+
     return {
-      authenticated: false,
-      error: SESSION_SUPERSEDED_MESSAGE,
-      code: SESSION_SUPERSEDED_CODE,
-      clearCookie: true,
+      authenticated: true,
+      sessionId: parsed.sessionId,
+      activeRecord: active,
     };
+  } catch (err: unknown) {
+    const isDatabaseUnavailable =
+      err instanceof DatabaseUnavailableError ||
+      (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "DATABASE_UNAVAILABLE");
+
+    if (isDatabaseUnavailable) {
+      return {
+        authenticated: false,
+        error: "Database service temporarily unavailable. Please retry.",
+        code: "DATABASE_UNAVAILABLE",
+        clearCookie: false,
+      };
+    }
+    throw err;
   }
-
-  // 2. Query persistent single active session registry
-  let active = await getActiveSessionRecord("admin", "admin");
-  if (!active) {
-    // If no active session exists yet in the registry, establish this validly HMAC-signed token
-    active = await registerActiveSessionRecord({
-      accountType: "admin",
-      accountId: "admin",
-      sessionId: parsed.sessionId || crypto.randomUUID(),
-      tokenHash,
-      createdAt: new Date(parsed.timestamp || Date.now()).toISOString(),
-      lastActiveAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      isActive: true,
-    });
-  }
-
-  if (
-    !active ||
-    !active.isActive ||
-    active.tokenHash !== tokenHash ||
-    (parsed.sessionId && active.sessionId !== parsed.sessionId)
-  ) {
-    return {
-      authenticated: false,
-      error: SESSION_SUPERSEDED_MESSAGE,
-      code: SESSION_SUPERSEDED_CODE,
-      clearCookie: true,
-    };
-  }
-
-  // 3. Expiration check
-  if (new Date(active.expiresAt).getTime() < Date.now()) {
-    return {
-      authenticated: false,
-      error: "Admin session expired. Please log in again.",
-      code: SESSION_EXPIRED_CODE,
-      clearCookie: true,
-    };
-  }
-
-  // Touch last active asynchronously
-  touchActiveSession("admin", "admin").catch(() => {});
-
-  return {
-    authenticated: true,
-    sessionId: parsed.sessionId,
-    activeRecord: active,
-  };
 }
 
 /**
@@ -197,6 +231,8 @@ export async function registerVisitorActiveSession(
   email: string,
   token: string,
   conversationId?: string | null,
+  req?: NextRequest | { headers: { get(name: string): string | null } },
+  metadata?: Record<string, unknown>,
 ): Promise<ActiveSessionRecord> {
   const normalizedEmail = email.trim().toLowerCase();
   const tokenHash = hashToken(token);
@@ -207,6 +243,13 @@ export async function registerVisitorActiveSession(
 
   const now = new Date();
   const oneYearMs = 365 * 24 * 60 * 60 * 1000;
+
+  let sessionMetadata = metadata || null;
+  if (req && !sessionMetadata) {
+    try {
+      sessionMetadata = extractVisitorMetadata(req) as unknown as Record<string, unknown>;
+    } catch {}
+  }
 
   return registerActiveSessionRecord(
     {
@@ -219,6 +262,7 @@ export async function registerVisitorActiveSession(
       lastActiveAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + oneYearMs).toISOString(),
       isActive: true,
+      metadata: sessionMetadata,
     },
     prevHash,
   );
@@ -241,38 +285,10 @@ export async function validateVisitorSession(
 
   const tokenHash = hashToken(token);
 
-  // 1. Check if this token was explicitly superseded (e.g. login on another device)
-  const superseded = await isSessionTokenSuperseded(tokenHash);
-  if (superseded) {
-    return {
-      valid: false,
-      reason: "SUPERSEDED",
-      error: SESSION_SUPERSEDED_MESSAGE,
-      code: SESSION_SUPERSEDED_CODE,
-      clearCookie: true,
-      conversation: null,
-    };
-  }
-
-  // 2. Fetch conversation associated with this token hash
-  const conversation = await getConversationByHash(tokenHash);
-  if (!conversation) {
-    return {
-      valid: false,
-      reason: "CONVERSATION_NOT_FOUND",
-      conversation: null,
-    };
-  }
-
-  // 3. If conversation is email verified, enforce single active session registry
-  if (conversation.emailVerified && conversation.visitorEmail) {
-    const normalizedEmail = conversation.visitorEmail.trim().toLowerCase();
-    const active = await getActiveSessionRecord("visitor", normalizedEmail);
-
-    if (active && active.isActive && active.tokenHash !== tokenHash) {
-      // Another device has logged into this verified account!
-      // Invalidate current tokenHash
-      await revokeActiveSessionRecord("visitor", normalizedEmail, tokenHash);
+  try {
+    // 1. Check if this token was explicitly superseded (e.g. login on another device)
+    const superseded = await isSessionTokenSuperseded(tokenHash);
+    if (superseded) {
       return {
         valid: false,
         reason: "SUPERSEDED",
@@ -283,18 +299,64 @@ export async function validateVisitorSession(
       };
     }
 
-    if (active) {
-      touchActiveSession("visitor", normalizedEmail).catch(() => {});
+    // 2. Fetch conversation associated with this token hash
+    const conversation = await getConversationByHash(tokenHash);
+    if (!conversation) {
+      return {
+        valid: false,
+        reason: "CONVERSATION_NOT_FOUND",
+        conversation: null,
+      };
     }
-  }
 
-  return {
-    valid: true,
-    token,
-    tokenHash,
-    conversation,
-    reason: "OK",
-  };
+    // 3. If conversation is email verified, enforce single active session registry
+    if (conversation.emailVerified && conversation.visitorEmail) {
+      const normalizedEmail = conversation.visitorEmail.trim().toLowerCase();
+      const active = await getActiveSessionRecord("visitor", normalizedEmail);
+
+      if (active && active.isActive && active.tokenHash !== tokenHash) {
+        // Another device has logged into this verified account!
+        // Invalidate current tokenHash
+        await revokeActiveSessionRecord("visitor", normalizedEmail, tokenHash);
+        return {
+          valid: false,
+          reason: "SUPERSEDED",
+          error: SESSION_SUPERSEDED_MESSAGE,
+          code: SESSION_SUPERSEDED_CODE,
+          clearCookie: true,
+          conversation: null,
+        };
+      }
+
+      if (active) {
+        touchActiveSession("visitor", normalizedEmail).catch(() => {});
+      }
+    }
+
+    return {
+      valid: true,
+      token,
+      tokenHash,
+      conversation,
+      reason: "OK",
+    };
+  } catch (err: unknown) {
+    const isDatabaseUnavailable =
+      err instanceof DatabaseUnavailableError ||
+      (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "DATABASE_UNAVAILABLE");
+
+    if (isDatabaseUnavailable) {
+      return {
+        valid: false,
+        reason: "DATABASE_UNAVAILABLE",
+        error: "Database service temporarily unavailable. Please retry.",
+        code: "DATABASE_UNAVAILABLE",
+        clearCookie: false,
+        conversation: null,
+      };
+    }
+    throw err;
+  }
 }
 
 /**
