@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useRef, useId } from "react";
+import React, { useEffect, useRef, useState, useId, useCallback } from "react";
 
 export interface GlassSurfaceProps {
   children?: React.ReactNode;
@@ -23,14 +23,14 @@ const GlassSurface: React.FC<GlassSurfaceProps> = ({
   width,
   height,
   borderRadius = 24,
-  borderWidth = 1,
-  brightness = 1.1,
-  opacity = 0.85,
-  blur = 20,
-  distortionScale = -120,
-  redOffset = 10,
+  borderWidth = 1.5,
+  brightness = 1.12,
+  opacity = 0.76,
+  blur = 28,
+  distortionScale = -80,
+  redOffset = 12,
   greenOffset = 6,
-  blueOffset = 3,
+  blueOffset = 2,
   className = "",
   style = {},
 }) => {
@@ -39,6 +39,22 @@ const GlassSurface: React.FC<GlassSurfaceProps> = ({
   const redChannelRef = useRef<SVGFEDisplacementMapElement>(null);
   const greenChannelRef = useRef<SVGFEDisplacementMapElement>(null);
   const blueChannelRef = useRef<SVGFEDisplacementMapElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Dynamic specular light reflection tracking (defaults to upper-left natural lighting angle)
+  const [reflectionPos, setReflectionPos] = useState({ x: 25, y: 18 });
+
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = Math.max(5, Math.min(95, ((e.clientX - rect.left) / rect.width) * 100));
+    const y = Math.max(5, Math.min(95, ((e.clientY - rect.top) / rect.height) * 100));
+    setReflectionPos({ x, y });
+  }, []);
+
+  const handlePointerLeave = useCallback(() => {
+    setReflectionPos({ x: 25, y: 18 });
+  }, []);
 
   useEffect(() => {
     if (redChannelRef.current) {
@@ -56,31 +72,42 @@ const GlassSurface: React.FC<GlassSurfaceProps> = ({
 
   return (
     <div
-      className={`relative overflow-hidden ${className}`}
+      ref={containerRef}
+      onPointerMove={handlePointerMove}
+      onPointerLeave={handlePointerLeave}
+      className={`relative overflow-hidden group/glass ${className}`}
       style={{
         width: width !== undefined ? width : "auto",
         height: height !== undefined ? height : "auto",
         borderRadius: parsedRadius,
-        backgroundColor: `rgba(14, 20, 36, ${opacity})`,
-        backdropFilter: `blur(${blur}px) brightness(${brightness})`,
-        WebkitBackdropFilter: `blur(${blur}px) brightness(${brightness})`,
-        boxShadow: `0 8px 32px 0 rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 -1px 0 rgba(255, 255, 255, 0.05)`,
-        border: `${borderWidth}px solid rgba(255, 255, 255, 0.15)`,
+        backgroundColor: `rgba(10, 16, 32, ${opacity})`,
+        backdropFilter: `blur(${blur}px) saturate(180%) brightness(${brightness})`,
+        WebkitBackdropFilter: `blur(${blur}px) saturate(180%) brightness(${brightness})`,
+        boxShadow: `
+          0 25px 60px -15px rgba(0, 0, 0, 0.75),
+          0 0 0 ${borderWidth}px rgba(255, 255, 255, 0.18),
+          inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.45),
+          inset 1.5px 0 2px 0 rgba(255, 255, 255, 0.3),
+          inset -1px -1px 3px 0 rgba(0, 0, 0, 0.5),
+          inset 0 0 35px 0 rgba(0, 0, 0, 0.35)
+        `,
+        border: `${borderWidth}px solid rgba(255, 255, 255, 0.16)`,
         ...style,
       }}
     >
-      {/* SVG Liquid Refraction Filter */}
+      {/* SVG Liquid Refraction Filter with Chromatic Aberration */}
       <svg
-        className="absolute inset-0 w-full h-full pointer-events-none opacity-40 mix-blend-overlay"
+        className="absolute inset-0 w-full h-full pointer-events-none opacity-45 mix-blend-overlay"
         xmlns="http://www.w3.org/2000/svg"
         aria-hidden="true"
       >
         <defs>
-          <filter id={filterId} x="0%" y="0%" width="100%" height="100%">
+          <filter id={filterId} x="-20%" y="-20%" width="140%" height="140%" colorInterpolationFilters="sRGB">
             <feTurbulence
               type="fractalNoise"
-              baseFrequency="0.02"
+              baseFrequency="0.015 0.02"
               numOctaves="3"
+              seed="7"
               result="noise"
             />
             <feDisplacementMap
@@ -122,18 +149,47 @@ const GlassSurface: React.FC<GlassSurfaceProps> = ({
         />
       </svg>
 
-      {/* Surface Specular & Sheen Highlights */}
+      {/* Layer 1: Diagonal Primary Specular Sheen (Curved Glass Glare Beam) */}
       <div
-        className="absolute inset-x-0 top-0 h-1/2 bg-linear-to-b from-white/15 to-transparent pointer-events-none"
-        aria-hidden="true"
-      />
-      <div
-        className="absolute -top-1/2 -left-1/2 w-[200%] h-[200%] bg-[radial-gradient(ellipse_at_top_left,rgba(255,255,255,0.12)_0%,transparent_60%)] pointer-events-none"
+        className="absolute inset-0 bg-linear-to-br from-white/20 via-white/5 to-transparent pointer-events-none"
         aria-hidden="true"
       />
 
-      {/* Surface Content */}
-      <div className="relative z-10 w-full h-full">
+      {/* Layer 2: Prismatic Optical Caustic Dispersion Highlight */}
+      <div
+        className="absolute inset-0 bg-[radial-gradient(ellipse_120%_60%_at_15%_0%,rgba(34,211,238,0.18)_0%,rgba(168,85,247,0.1)_35%,rgba(255,255,255,0.03)_65%,transparent_85%)] pointer-events-none"
+        aria-hidden="true"
+      />
+
+      {/* Layer 3: Interactive Smooth Specular Highlight (Follows pointer coordinates or rests naturally) */}
+      <div
+        className="absolute inset-0 pointer-events-none transition-all duration-300 ease-out"
+        style={{
+          background: `radial-gradient(circle 260px at ${reflectionPos.x}% ${reflectionPos.y}%, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.04) 45%, transparent 75%)`,
+        }}
+        aria-hidden="true"
+      />
+
+      {/* Layer 4: Top Razor Specular Bevel Line (Sharp Top Light Catcher) */}
+      <div
+        className="absolute inset-x-0 top-0 h-[1.5px] bg-linear-to-r from-white/70 via-white/30 to-transparent pointer-events-none"
+        aria-hidden="true"
+      />
+
+      {/* Layer 5: Left Razor Specular Bevel Line (Sharp Left Light Catcher) */}
+      <div
+        className="absolute inset-y-0 left-0 w-[1.5px] bg-linear-to-b from-white/70 via-white/25 to-transparent pointer-events-none"
+        aria-hidden="true"
+      />
+
+      {/* Layer 6: Ambient Internal Glass Vignette for 3D Convex Depth */}
+      <div
+        className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_50%,rgba(0,0,0,0.35)_100%)] pointer-events-none"
+        aria-hidden="true"
+      />
+
+      {/* Surface Content - Fully readable with sharp contrast */}
+      <div className="relative z-10 w-full h-full flex flex-col justify-between">
         {children}
       </div>
     </div>
@@ -141,4 +197,3 @@ const GlassSurface: React.FC<GlassSurfaceProps> = ({
 };
 
 export default GlassSurface;
-

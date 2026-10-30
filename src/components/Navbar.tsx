@@ -225,102 +225,95 @@ const Navbar = () => {
   return (
     <>
       {/* ========================================================================= */}
-      {/* 1. TOP BAR: Portfolio Brand on Left, Ambient Music Control on Right       */}
+      {/* 1. TOP HEADER: Portfolio Brand on Far Left, Music ON/OFF on Far Right    */}
+      {/* Clean, simple layout with NO glassmorphism, blur, or SVG refraction       */}
       {/* ========================================================================= */}
-      <header className="fixed top-0 left-0 right-0 z-40 px-3 sm:px-6 pt-3 sm:pt-4 pointer-events-none select-none">
-        <div className="max-w-7xl mx-auto pointer-events-auto">
-          <GlassSurface
-            borderRadius={28}
-            borderWidth={1}
-            blur={24}
-            opacity={0.88}
-            className="w-full px-4 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between shadow-2xl"
+      <header className="fixed top-0 left-0 right-0 z-40 px-4 sm:px-8 py-3 sm:py-4 pointer-events-none select-none">
+        <div className="w-full flex items-center justify-between pointer-events-auto">
+          {/* Portfolio Brand Logo & Name (Far Left) */}
+          <Link
+            href="/"
+            onClick={(e) => handleNavClick(e, "home", "Home")}
+            className="flex items-center gap-2.5 sm:gap-3 group cursor-pointer focus:outline-none"
+            aria-label="Ganganathan Portfolio Home"
           >
-            {/* Portfolio Brand Logo & Name */}
-            <Link
-              href="/"
-              onClick={(e) => handleNavClick(e, "home", "Home")}
-              className="flex items-center gap-2.5 sm:gap-3.5 group cursor-pointer focus:outline-none"
-              aria-label="Ganganathan Portfolio Home"
+            <div className="relative w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-black/40 p-1.5 border border-white/10 group-hover:border-cyan-400/50 transition-colors shadow-sm">
+              <Image
+                src={logo}
+                alt="Ganganathan Logo"
+                width={36}
+                height={36}
+                className="object-contain w-full h-full"
+                priority
+              />
+            </div>
+            <div className="flex flex-col">
+              <p className="text-white text-[15px] sm:text-[17px] font-extrabold tracking-wider flex items-center drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">
+                GANGANATHAN
+                <span className="text-cyan-400 ml-1.5 text-xs font-mono font-bold tracking-widest">
+                  .DEV
+                </span>
+              </p>
+              <span className="hidden sm:block text-[10px] text-gray-400 font-mono tracking-tight -mt-0.5">
+                Full-Stack & 3D Interactive
+              </span>
+            </div>
+          </Link>
+
+          {/* Music Play / Pause Control (Far Right) */}
+          <div className="flex items-center">
+            <button
+              type="button"
+              onClick={toggleMusic}
+              aria-label={isPlayingMusic ? "Pause ambient sound" : "Play ambient sound"}
+              title={isPlayingMusic ? "Pause ambient audio" : "Play ambient audio"}
+              className={`group flex items-center gap-2 sm:gap-2.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-full border transition-all duration-300 cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-400 ${
+                isPlayingMusic
+                  ? "bg-cyan-500/20 border-cyan-400/60 shadow-[0_0_15px_rgba(34,211,238,0.3)] text-cyan-300"
+                  : "bg-black/40 border-white/15 hover:border-white/30 text-gray-300 hover:text-white shadow-sm"
+              }`}
             >
-              <div className="relative w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl bg-white/10 p-1 border border-white/20 group-hover:border-cyan-400/50 transition-colors">
-                <Image
-                  src={logo}
-                  alt="Ganganathan Logo"
-                  width={34}
-                  height={34}
-                  className="object-contain w-full h-full"
-                  priority
+              <span className="p-1 rounded-full bg-white/10 group-hover:scale-110 transition-transform flex items-center justify-center">
+                {isPlayingMusic ? (
+                  <Pause className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-300 fill-current" />
+                ) : (
+                  <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-300 fill-current ml-0.5" />
+                )}
+              </span>
+
+              {/* Animated Equalizer Sound Wave Bars */}
+              <div className="flex items-end gap-1 h-4 w-5 sm:w-6" aria-hidden="true">
+                <span
+                  className={`w-1 rounded-full bg-cyan-400 transition-all duration-300 ${
+                    isPlayingMusic ? "animate-[soundWave_0.8s_ease-in-out_infinite_alternate]" : "h-1.5 opacity-40"
+                  }`}
+                  style={{ height: isPlayingMusic ? undefined : "4px" }}
+                />
+                <span
+                  className={`w-1 rounded-full bg-cyan-300 transition-all duration-300 ${
+                    isPlayingMusic ? "animate-[soundWave_1.2s_ease-in-out_infinite_alternate_0.2s]" : "h-2.5 opacity-40"
+                  }`}
+                  style={{ height: isPlayingMusic ? undefined : "8px" }}
+                />
+                <span
+                  className={`w-1 rounded-full bg-cyan-400 transition-all duration-300 ${
+                    isPlayingMusic ? "animate-[soundWave_0.9s_ease-in-out_infinite_alternate_0.4s]" : "h-1 opacity-40"
+                  }`}
+                  style={{ height: isPlayingMusic ? undefined : "3px" }}
+                />
+                <span
+                  className={`w-1 rounded-full bg-cyan-300 transition-all duration-300 ${
+                    isPlayingMusic ? "animate-[soundWave_1.1s_ease-in-out_infinite_alternate_0.1s]" : "h-2 opacity-40"
+                  }`}
+                  style={{ height: isPlayingMusic ? undefined : "6px" }}
                 />
               </div>
-              <div className="flex flex-col">
-                <p className="text-white text-[15px] sm:text-[17px] font-extrabold tracking-wider flex items-center drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">
-                  GANGANATHAN
-                  <span className="text-cyan-400 ml-1.5 text-xs font-mono font-bold tracking-widest">
-                    .DEV
-                  </span>
-                </p>
-                <span className="hidden sm:block text-[10px] text-gray-400 font-mono tracking-tight -mt-0.5">
-                  Full-Stack & 3D Interactive
-                </span>
-              </div>
-            </Link>
 
-            {/* Music Play / Pause Control with Animated Sound Wave Visualizer */}
-            <div className="flex items-center gap-2 sm:gap-3">
-              <button
-                type="button"
-                onClick={toggleMusic}
-                aria-label={isPlayingMusic ? "Pause ambient sound" : "Play ambient sound"}
-                title={isPlayingMusic ? "Pause ambient audio" : "Play ambient audio"}
-                className={`group flex items-center gap-2 sm:gap-2.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-full border transition-all duration-300 cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-400 ${
-                  isPlayingMusic
-                    ? "bg-cyan-500/20 border-cyan-400/60 shadow-[0_0_15px_rgba(34,211,238,0.3)] text-cyan-300"
-                    : "bg-white/5 border-white/15 hover:bg-white/10 text-gray-300 hover:text-white"
-                }`}
-              >
-                <span className="p-1 rounded-full bg-white/10 group-hover:scale-110 transition-transform flex items-center justify-center">
-                  {isPlayingMusic ? (
-                    <Pause className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-300 fill-current" />
-                  ) : (
-                    <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-300 fill-current ml-0.5" />
-                  )}
-                </span>
-
-                {/* Animated Equalizer Sound Wave Bars */}
-                <div className="flex items-end gap-1 h-4 w-5 sm:w-6" aria-hidden="true">
-                  <span
-                    className={`w-1 rounded-full bg-cyan-400 transition-all duration-300 ${
-                      isPlayingMusic ? "animate-[soundWave_0.8s_ease-in-out_infinite_alternate]" : "h-1.5 opacity-40"
-                    }`}
-                    style={{ height: isPlayingMusic ? undefined : "4px" }}
-                  />
-                  <span
-                    className={`w-1 rounded-full bg-cyan-300 transition-all duration-300 ${
-                      isPlayingMusic ? "animate-[soundWave_1.2s_ease-in-out_infinite_alternate_0.2s]" : "h-2.5 opacity-40"
-                    }`}
-                    style={{ height: isPlayingMusic ? undefined : "8px" }}
-                  />
-                  <span
-                    className={`w-1 rounded-full bg-cyan-400 transition-all duration-300 ${
-                      isPlayingMusic ? "animate-[soundWave_0.9s_ease-in-out_infinite_alternate_0.4s]" : "h-1 opacity-40"
-                    }`}
-                    style={{ height: isPlayingMusic ? undefined : "3px" }}
-                  />
-                  <span
-                    className={`w-1 rounded-full bg-cyan-300 transition-all duration-300 ${
-                      isPlayingMusic ? "animate-[soundWave_1.1s_ease-in-out_infinite_alternate_0.1s]" : "h-2 opacity-40"
-                    }`}
-                    style={{ height: isPlayingMusic ? undefined : "6px" }}
-                  />
-                </div>
-
-                <span className="hidden sm:inline-block text-xs font-mono font-medium tracking-wide">
-                  {isPlayingMusic ? "Audio ON" : "Ambient"}
-                </span>
-              </button>
-            </div>
-          </GlassSurface>
+              <span className="hidden sm:inline-block text-xs font-mono font-medium tracking-wide">
+                {isPlayingMusic ? "Audio ON" : "Ambient"}
+              </span>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -333,35 +326,27 @@ const Navbar = () => {
           onClick={() => setIsNavOpen(!isNavOpen)}
           aria-label={isNavOpen ? "Close navigation menu" : "Open navigation menu"}
           aria-expanded={isNavOpen}
-          className="group relative cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-400 rounded-full transition-transform active:scale-95"
+          className={`group relative cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-400 rounded-full p-3 sm:p-3.5 flex items-center justify-center shadow-2xl transition-all duration-300 border ${
+            isNavOpen
+              ? "bg-[#0f172a] border-cyan-400 text-cyan-300 shadow-[0_0_20px_rgba(34,211,238,0.4)]"
+              : "bg-[#0b0f19] border-white/20 hover:border-cyan-400/60 hover:text-cyan-300 text-white shadow-black/80"
+          }`}
         >
-          <GlassSurface
-            borderRadius={9999}
-            borderWidth={1.5}
-            blur={20}
-            opacity={0.92}
-            className={`p-3 sm:p-3.5 flex items-center justify-center shadow-2xl transition-all duration-300 ${
-              isNavOpen
-                ? "bg-cyan-500/20 border-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.4)]"
-                : "border-white/20 hover:border-cyan-400/60 hover:shadow-[0_0_15px_rgba(34,211,238,0.25)]"
-            }`}
-          >
-            <div className="relative flex items-center gap-2">
-              <Compass
-                className={`w-5 h-5 sm:w-6 sm:h-6 transition-transform duration-500 ${
-                  isNavOpen ? "rotate-180 text-cyan-300 scale-105" : "text-white group-hover:rotate-45"
-                }`}
-              />
-              <span className="hidden md:inline-block text-xs font-mono font-bold tracking-wider text-white pr-1">
-                MENU
-              </span>
-            </div>
-          </GlassSurface>
+          <div className="relative flex items-center gap-2">
+            <Compass
+              className={`w-5 h-5 sm:w-6 sm:h-6 transition-transform duration-500 ${
+                isNavOpen ? "rotate-180 text-cyan-300 scale-105" : "text-white group-hover:rotate-45"
+              }`}
+            />
+            <span className="hidden md:inline-block text-xs font-mono font-bold tracking-wider pr-1">
+              MENU
+            </span>
+          </div>
         </button>
       </div>
 
       {/* ========================================================================= */}
-      {/* 3. SIDE GLASS NAVIGATION PANEL (Liquid Glass Effect from React Bits)      */}
+      {/* 3. SIDE GLASS NAVIGATION PANEL (Liquid Glass with Realistic Reflections) */}
       {/* ========================================================================= */}
       {isNavOpen && (
         <div
@@ -382,7 +367,8 @@ const Navbar = () => {
           borderRadius={24}
           borderWidth={1.5}
           blur={28}
-          opacity={0.94}
+          opacity={0.76}
+          distortionScale={-80}
           className="w-full h-full p-5 sm:p-6 flex flex-col justify-between shadow-2xl border-white/20"
         >
           {/* Panel Header */}
