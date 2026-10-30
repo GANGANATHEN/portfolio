@@ -4,6 +4,7 @@ import {
   verifyAdminPassword,
 } from "@/lib/live-chat/security";
 import { registerAdminActiveSession } from "@/lib/live-chat/session-registry";
+import { DatabaseUnavailableError } from "@/lib/live-chat/db";
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,7 +19,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid admin password." }, { status: 401 });
     }
 
-    const { token } = await registerAdminActiveSession();
+    const { token } = await registerAdminActiveSession(req);
     const res = NextResponse.json({ success: true, message: "Authenticated successfully." });
 
     res.cookies.set({
@@ -32,8 +33,23 @@ export async function POST(req: NextRequest) {
     });
 
     return res;
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("[Admin Login Error]:", error);
+
+    const isDatabaseUnavailable =
+      error instanceof DatabaseUnavailableError ||
+      (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "DATABASE_UNAVAILABLE");
+
+    if (isDatabaseUnavailable) {
+      return NextResponse.json(
+        {
+          error: "Database service temporarily unavailable. Please verify database connection and ensure Supabase migrations are applied.",
+          code: "DATABASE_UNAVAILABLE",
+        },
+        { status: 503 },
+      );
+    }
+
     return NextResponse.json({ error: "Authentication failed." }, { status: 500 });
   }
 }

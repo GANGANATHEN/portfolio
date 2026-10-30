@@ -24,19 +24,10 @@ class CanvasErrorBoundary extends React.Component<
 }
 
 const Tech = () => {
-  const [isMobile, setIsMobile] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
-    const checkScreen = () => {
-      // Mobile & tablet browsers have strict WebGL context limits (usually 8-16)
-      // Rendering 13 separate Three.js Canvases exhausts mobile GPU context limits.
-      setIsMobile(window.innerWidth <= 768);
-    };
-    checkScreen();
-    window.addEventListener("resize", checkScreen);
-    return () => window.removeEventListener("resize", checkScreen);
   }, []);
 
   return (
@@ -69,12 +60,12 @@ const Tech = () => {
               className="w-20 h-20 sm:w-28 sm:h-28 2xl:w-32 2xl:h-32 cursor-grab active:cursor-grabbing flex items-center justify-center"
               key={technology.name}
             >
-              {mounted && !isMobile ? (
+              {mounted ? (
                 <CanvasErrorBoundary fallback={fallbackOrb}>
                   <BallCanvas icon={technology.icon.src} />
                 </CanvasErrorBoundary>
               ) : (
-                fallbackOrb
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white/5 border border-white/10 animate-pulse" />
               )}
             </div>
           );

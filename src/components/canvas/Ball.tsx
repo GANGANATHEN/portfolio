@@ -17,14 +17,15 @@ const Ball = ({ imgUrl }: { imgUrl: string | { src: string } }) => {
 
   return (
     <Float speed={1.75} rotationIntensity={1} floatIntensity={2}>
-      <ambientLight intensity={0.25} />
-      <directionalLight position={[0, 0, 0.5]} />
+      <ambientLight intensity={0.85} />
+      <directionalLight position={[0, 0, 1.2]} intensity={1.8} />
+      <directionalLight position={[0, 1, -1]} intensity={0.8} />
       <mesh castShadow receiveShadow scale={2.75}>
         <icosahedronGeometry args={[1, 1]} />
         <meshStandardMaterial
-          color="#232631"
-          roughness={0.4}
-          metalness={0.1}
+          color="#ffffff"
+          roughness={0.25}
+          metalness={0.08}
           polygonOffset
           polygonOffsetFactor={-5}
           flatShading

@@ -1,88 +1,123 @@
 "use client";
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { gsap } from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { useGSAP } from "@gsap/react";
+import { Play, Pause, Compass, X, Volume2, VolumeX } from "lucide-react";
 import { navLinks } from "@/constants";
-import { logo, menu, close } from "../../public/assets";
-import WaterDropletsOverlay from "./WaterDropletsOverlay";
+import { logo } from "../../public/assets";
+import GlassSurface from "./GlassSurface";
 
-gsap.registerPlugin(ScrollTrigger);
+// Web Audio Ambient Synthesizer Singleton to ensure single audio player across the application
+class AmbientAudioController {
+  private ctx: AudioContext | null = null;
+  private masterGain: GainNode | null = null;
+  private oscillators: OscillatorNode[] = [];
+  private isInitialized = false;
+
+  public init() {
+    if (this.isInitialized || typeof window === "undefined") return;
+    try {
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtx) return;
+      this.ctx = new AudioCtx();
+
+      // Master gain node with gentle limiter
+      this.masterGain = this.ctx.createGain();
+      this.masterGain.gain.setValueAtTime(0, this.ctx.currentTime);
+
+      // Lowpass filter for smooth ambient tone
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(420, this.ctx.currentTime);
+      filter.Q.setValueAtTime(1.5, this.ctx.currentTime);
+
+      // Ethereal chord frequencies (Cmaj9 / Fmaj7 ambient voicing)
+      const frequencies = [130.81, 196.0, 246.94, 329.63, 392.0];
+
+      frequencies.forEach((freq, idx) => {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const oscGain = this.ctx.createGain();
+
+        // Subtle detuning and sine/triangle mix
+        osc.type = idx % 2 === 0 ? "sine" : "triangle";
+        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+        osc.detune.setValueAtTime((idx - 2) * 4, this.ctx.currentTime);
+
+        // Lower volume for individual harmonic layers
+        oscGain.gain.setValueAtTime(0.04 / (idx + 1), this.ctx.currentTime);
+
+        osc.connect(oscGain);
+        oscGain.connect(filter);
+        osc.start();
+        this.oscillators.push(osc);
+      });
+
+      filter.connect(this.masterGain);
+      this.masterGain.connect(this.ctx.destination);
+      this.isInitialized = true;
+    } catch (e) {
+      console.warn("Ambient audio initialization failed:", e);
+    }
+  }
+
+  public play(): boolean {
+    this.init();
+    if (!this.ctx || !this.masterGain) return false;
+    try {
+      if (this.ctx.state === "suspended") {
+        this.ctx.resume();
+      }
+      // Gentle fade in
+      this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
+      this.masterGain.gain.setTargetAtTime(0.12, this.ctx.currentTime, 0.4);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  public pause() {
+    if (!this.ctx || !this.masterGain) return;
+    try {
+      // Gentle fade out
+      this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
+      this.masterGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.3);
+      setTimeout(() => {
+        if (this.ctx && this.ctx.state === "running") {
+          this.ctx.suspend().catch(() => {});
+        }
+      }, 400);
+    } catch {}
+  }
+
+  public destroy() {
+    this.oscillators.forEach((osc) => {
+      try {
+        osc.stop();
+        osc.disconnect();
+      } catch {}
+    });
+    this.oscillators = [];
+    if (this.ctx) {
+      try {
+        this.ctx.close();
+      } catch {}
+      this.ctx = null;
+    }
+    this.isInitialized = false;
+  }
+}
+
+const ambientAudio = new AmbientAudioController();
 
 const Navbar = () => {
   const [active, setActive] = useState("Home");
-  const [toggle, setToggle] = useState(false);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const innerNavRef = useRef<HTMLDivElement | null>(null);
-  const mobileMenuRef = useRef<HTMLDivElement | null>(null);
+  const [isNavOpen, setIsNavOpen] = useState(false);
+  const [isPlayingMusic, setIsPlayingMusic] = useState(false);
+  const sidePanelRef = useRef<HTMLDivElement | null>(null);
 
-  useGSAP(
-    () => {
-      gsap.set(innerNavRef.current, {
-        width: "100%",
-        maxWidth: "100%",
-        y: 0,
-        borderRadius: "0px",
-      });
-
-      gsap.from(containerRef.current, {
-        y: -100,
-        opacity: 0,
-        duration: 1,
-        ease: "power4.out",
-      });
-
-      gsap.from(".nav-item", {
-        y: -20,
-        opacity: 0,
-        stagger: 0.08,
-        duration: 0.8,
-        delay: 0.25,
-        ease: "back.out(1.7)",
-      });
-
-      ScrollTrigger.create({
-        trigger: "body",
-        start: "top -50px",
-        onEnter: () => {
-          if (innerNavRef.current) {
-            innerNavRef.current.classList.add("active-glass");
-            const isSmall = window.innerWidth <= 640;
-
-            gsap.to(innerNavRef.current, {
-              width: isSmall ? "94%" : "88%",
-              maxWidth: "1100px",
-              y: isSmall ? 8 : 16,
-              borderRadius: "50px",
-              duration: 0.4,
-              ease: "power2.out",
-              overwrite: "auto",
-            });
-          }
-        },
-        onLeaveBack: () => {
-          if (innerNavRef.current) {
-            innerNavRef.current.classList.remove("active-glass");
-
-            gsap.to(innerNavRef.current, {
-              width: "100%",
-              maxWidth: "100%",
-              y: 0,
-              borderRadius: "0px",
-              duration: 0.4,
-              ease: "power2.out",
-              overwrite: "auto",
-            });
-          }
-        },
-      });
-    },
-    { scope: containerRef },
-  );
-
-  // Active section tracking on scroll
+  // Active section tracking on window scroll
   useEffect(() => {
     const sectionIds = navLinks.map((l) => l.id);
     const handleScroll = () => {
@@ -96,7 +131,7 @@ const Navbar = () => {
         const el = document.getElementById(id);
         if (el) {
           const rect = el.getBoundingClientRect();
-          if (rect.top <= 180) {
+          if (rect.top <= 200) {
             const currentNav = navLinks.find((l) => l.id === id);
             if (currentNav) setActive(currentNav.title);
             break;
@@ -109,34 +144,52 @@ const Navbar = () => {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Close mobile menu on Escape key
+  // Keyboard navigation: Escape key closes the navigation panel
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && toggle) {
-        setToggle(false);
+      if (e.key === "Escape" && isNavOpen) {
+        setIsNavOpen(false);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [toggle]);
+  }, [isNavOpen]);
 
-  // Close mobile menu on outside click
+  // Close panel on outside click
   useEffect(() => {
-    if (!toggle) return;
+    if (!isNavOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
-      if (mobileMenuRef.current && !mobileMenuRef.current.contains(e.target as Node)) {
-        setToggle(false);
+      if (sidePanelRef.current && !sidePanelRef.current.contains(e.target as Node)) {
+        setIsNavOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [toggle]);
+  }, [isNavOpen]);
+
+  // Audio play/pause toggle
+  const toggleMusic = useCallback(() => {
+    if (isPlayingMusic) {
+      ambientAudio.pause();
+      setIsPlayingMusic(false);
+    } else {
+      const ok = ambientAudio.play();
+      if (ok) setIsPlayingMusic(true);
+    }
+  }, [isPlayingMusic]);
+
+  // Clean up audio on unmount
+  useEffect(() => {
+    return () => {
+      ambientAudio.pause();
+    };
+  }, []);
 
   // Smooth Section Navigation
   const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, id: string, title: string) => {
     e.preventDefault();
     setActive(title);
-    setToggle(false);
+    setIsNavOpen(false);
 
     if (id === "home") {
       if (typeof window !== "undefined") {
@@ -169,156 +222,235 @@ const Navbar = () => {
     }
   };
 
-  // Magnetic Hover Logic for Desktop Navigation Items
-  const handleMagneticMove = (e: React.MouseEvent<HTMLElement>) => {
-    const el = e.currentTarget as HTMLElement;
-    const boundingRect = el.getBoundingClientRect();
-    const x = e.clientX - boundingRect.left - boundingRect.width / 2;
-    const y = e.clientY - boundingRect.top - boundingRect.height / 2;
-    gsap.to(el, {
-      x: x * 0.35,
-      y: y * 0.35,
-      duration: 0.3,
-      ease: "power2.out",
-      overwrite: "auto",
-    });
-  };
-
-  const handleMagneticLeave = (e: React.MouseEvent<HTMLElement>) => {
-    gsap.to(e.currentTarget as HTMLElement, {
-      x: 0,
-      y: 0,
-      duration: 0.6,
-      ease: "elastic.out(1, 0.4)",
-      overwrite: "auto",
-    });
-  };
-
   return (
-    <nav
-      ref={containerRef}
-      className="w-full flex justify-center pointer-events-none select-none"
-    >
-      <div
-        ref={innerNavRef}
-        className="nav-island-container mt-2 w-full flex justify-between items-center px-3.5 sm:px-6 md:px-8 lg:px-10 py-2 sm:py-2.5 pointer-events-auto overflow-hidden relative"
-      >
-        {/* Layer 1: Subtle Caustic Background Light Reflection */}
-        <div className="liquid-glass-reflection" />
+    <>
+      {/* ========================================================================= */}
+      {/* 1. TOP BAR: Portfolio Brand on Left, Ambient Music Control on Right       */}
+      {/* ========================================================================= */}
+      <header className="fixed top-0 left-0 right-0 z-40 px-3 sm:px-6 pt-3 sm:pt-4 pointer-events-none select-none">
+        <div className="max-w-7xl mx-auto pointer-events-auto">
+          <GlassSurface
+            borderRadius={28}
+            borderWidth={1}
+            blur={24}
+            opacity={0.88}
+            className="w-full px-4 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between shadow-2xl"
+          >
+            {/* Portfolio Brand Logo & Name */}
+            <Link
+              href="/"
+              onClick={(e) => handleNavClick(e, "home", "Home")}
+              className="flex items-center gap-2.5 sm:gap-3.5 group cursor-pointer focus:outline-none"
+              aria-label="Ganganathan Portfolio Home"
+            >
+              <div className="relative w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl bg-white/10 p-1 border border-white/20 group-hover:border-cyan-400/50 transition-colors">
+                <Image
+                  src={logo}
+                  alt="Ganganathan Logo"
+                  width={34}
+                  height={34}
+                  className="object-contain w-full h-full"
+                  priority
+                />
+              </div>
+              <div className="flex flex-col">
+                <p className="text-white text-[15px] sm:text-[17px] font-extrabold tracking-wider flex items-center drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">
+                  GANGANATHAN
+                  <span className="text-cyan-400 ml-1.5 text-xs font-mono font-bold tracking-widest">
+                    .DEV
+                  </span>
+                </p>
+                <span className="hidden sm:block text-[10px] text-gray-400 font-mono tracking-tight -mt-0.5">
+                  Full-Stack & 3D Interactive
+                </span>
+              </div>
+            </Link>
 
-        {/* Layer 2: Light Refraction Sheen Streak */}
-        <div className="liquid-glass-sheen" />
-
-        {/* Layer 3: Physically Realistic Scattered Water Droplets */}
-        <WaterDropletsOverlay className="opacity-80" />
-
-        {/* Brand Logo & Name */}
-        <Link
-          href="/"
-          className="flex items-center gap-2 sm:gap-3 nav-item z-10 shrink-0"
-          onClick={(e) => handleNavClick(e, "home", "Home")}
-        >
-          <Image
-            src={logo}
-            alt="logo"
-            width={34}
-            height={34}
-            className="object-contain sm:w-9 sm:h-9"
-          />
-          <p className="text-white text-[15px] sm:text-[17px] font-extrabold tracking-wide cursor-pointer flex items-center drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
-            GANGANATHAN{" "}
-            <span className="sm:block hidden text-accent ml-2 text-xs font-mono font-bold tracking-widest">
-              .DEV
-            </span>
-          </p>
-        </Link>
-
-        {/* Desktop / Tablet Links (md: >= 768px) */}
-        <ul className="list-none hidden md:flex flex-row items-center gap-1.5 md:gap-2 lg:gap-4 xl:gap-6 z-10">
-          {navLinks.map((nav) => {
-            const isCurrent = active.toLowerCase() === nav.title.toLowerCase();
-            return (
-              <li
-                key={nav.id}
-                onMouseMove={handleMagneticMove}
-                onMouseLeave={handleMagneticLeave}
-                className={`magnetic-link nav-item relative rounded-full transition-all duration-300 ${
-                  isCurrent
-                    ? "bg-white/15 text-white shadow-xs shadow-cyan-400/20 border border-white/20"
-                    : "text-gray-300 hover:text-white hover:bg-white/5"
+            {/* Music Play / Pause Control with Animated Sound Wave Visualizer */}
+            <div className="flex items-center gap-2 sm:gap-3">
+              <button
+                type="button"
+                onClick={toggleMusic}
+                aria-label={isPlayingMusic ? "Pause ambient sound" : "Play ambient sound"}
+                title={isPlayingMusic ? "Pause ambient audio" : "Play ambient audio"}
+                className={`group flex items-center gap-2 sm:gap-2.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-full border transition-all duration-300 cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-400 ${
+                  isPlayingMusic
+                    ? "bg-cyan-500/20 border-cyan-400/60 shadow-[0_0_15px_rgba(34,211,238,0.3)] text-cyan-300"
+                    : "bg-white/5 border-white/15 hover:bg-white/10 text-gray-300 hover:text-white"
                 }`}
               >
-                <a
-                  href={`#${nav.id}`}
-                  onClick={(e) => handleNavClick(e, nav.id, nav.title)}
-                  className="block px-2.5 py-1.5 md:px-3 md:py-1.5 lg:px-3.5 lg:py-2 text-xs md:text-[13px] lg:text-[14px] xl:text-[15px] font-semibold tracking-wide whitespace-nowrap drop-shadow-[0_1px_1px_rgba(0,0,0,0.6)]"
-                >
-                  {nav.title}
-                </a>
-              </li>
-            );
-          })}
-        </ul>
+                <span className="p-1 rounded-full bg-white/10 group-hover:scale-110 transition-transform flex items-center justify-center">
+                  {isPlayingMusic ? (
+                    <Pause className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-300 fill-current" />
+                  ) : (
+                    <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-300 fill-current ml-0.5" />
+                  )}
+                </span>
 
-        {/* Mobile Hamburger Button (< 768px) */}
-        <div className="md:hidden flex flex-1 justify-end items-center nav-item z-20">
-          <button
-            type="button"
-            aria-label="Toggle Navigation Menu"
-            aria-expanded={toggle}
-            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-400 transition-colors"
-            onClick={() => setToggle(!toggle)}
-          >
-            <Image
-              src={toggle ? close : menu}
-              alt="menu"
-              width={24}
-              height={24}
-              className="object-contain"
-            />
-          </button>
+                {/* Animated Equalizer Sound Wave Bars */}
+                <div className="flex items-end gap-1 h-4 w-5 sm:w-6" aria-hidden="true">
+                  <span
+                    className={`w-1 rounded-full bg-cyan-400 transition-all duration-300 ${
+                      isPlayingMusic ? "animate-[soundWave_0.8s_ease-in-out_infinite_alternate]" : "h-1.5 opacity-40"
+                    }`}
+                    style={{ height: isPlayingMusic ? undefined : "4px" }}
+                  />
+                  <span
+                    className={`w-1 rounded-full bg-cyan-300 transition-all duration-300 ${
+                      isPlayingMusic ? "animate-[soundWave_1.2s_ease-in-out_infinite_alternate_0.2s]" : "h-2.5 opacity-40"
+                    }`}
+                    style={{ height: isPlayingMusic ? undefined : "8px" }}
+                  />
+                  <span
+                    className={`w-1 rounded-full bg-cyan-400 transition-all duration-300 ${
+                      isPlayingMusic ? "animate-[soundWave_0.9s_ease-in-out_infinite_alternate_0.4s]" : "h-1 opacity-40"
+                    }`}
+                    style={{ height: isPlayingMusic ? undefined : "3px" }}
+                  />
+                  <span
+                    className={`w-1 rounded-full bg-cyan-300 transition-all duration-300 ${
+                      isPlayingMusic ? "animate-[soundWave_1.1s_ease-in-out_infinite_alternate_0.1s]" : "h-2 opacity-40"
+                    }`}
+                    style={{ height: isPlayingMusic ? undefined : "6px" }}
+                  />
+                </div>
 
-          {/* Mobile Dropdown Menu with Liquid Glass styling */}
-          {toggle && (
-            <div
-              ref={mobileMenuRef}
-              className="absolute top-16 right-0 mx-3 min-w-56 sm:min-w-64 max-w-[calc(100vw-1.5rem)] z-50 rounded-2xl p-4 bg-[#0a0f1d]/90 backdrop-blur-2xl border border-white/15 shadow-2xl shadow-black/80 animate-in fade-in slide-in-from-top-3 duration-200"
-            >
-              <div className="relative">
-                {/* Subtle mobile droplet overlay */}
-                <div className="liquid-glass-sheen" />
-                <ul className="list-none flex flex-col gap-1 w-full relative z-10">
-                  {navLinks.map((nav) => {
-                    const isCurrent = active.toLowerCase() === nav.title.toLowerCase();
-                    return (
-                      <li
-                        key={nav.id}
-                        className={`w-full rounded-xl transition-colors ${
-                          isCurrent
-                            ? "bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30"
-                            : "text-gray-300 hover:text-white hover:bg-white/5"
-                        }`}
-                      >
-                        <a
-                          href={`#${nav.id}`}
-                          onClick={(e) => handleNavClick(e, nav.id, nav.title)}
-                          className="flex items-center justify-between w-full px-3.5 py-2.5 text-sm font-medium"
-                        >
-                          <span>{nav.title}</span>
-                          {isCurrent && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]" />
-                          )}
-                        </a>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
+                <span className="hidden sm:inline-block text-xs font-mono font-medium tracking-wide">
+                  {isPlayingMusic ? "Audio ON" : "Ambient"}
+                </span>
+              </button>
             </div>
-          )}
+          </GlassSurface>
         </div>
+      </header>
+
+      {/* ========================================================================= */}
+      {/* 2. FLOATING BOTTOM-LEFT NAVIGATION TOGGLE BUTTON                          */}
+      {/* ========================================================================= */}
+      <div className="fixed bottom-6 left-6 z-40 select-none">
+        <button
+          type="button"
+          onClick={() => setIsNavOpen(!isNavOpen)}
+          aria-label={isNavOpen ? "Close navigation menu" : "Open navigation menu"}
+          aria-expanded={isNavOpen}
+          className="group relative cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-400 rounded-full transition-transform active:scale-95"
+        >
+          <GlassSurface
+            borderRadius={9999}
+            borderWidth={1.5}
+            blur={20}
+            opacity={0.92}
+            className={`p-3 sm:p-3.5 flex items-center justify-center shadow-2xl transition-all duration-300 ${
+              isNavOpen
+                ? "bg-cyan-500/20 border-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.4)]"
+                : "border-white/20 hover:border-cyan-400/60 hover:shadow-[0_0_15px_rgba(34,211,238,0.25)]"
+            }`}
+          >
+            <div className="relative flex items-center gap-2">
+              <Compass
+                className={`w-5 h-5 sm:w-6 sm:h-6 transition-transform duration-500 ${
+                  isNavOpen ? "rotate-180 text-cyan-300 scale-105" : "text-white group-hover:rotate-45"
+                }`}
+              />
+              <span className="hidden md:inline-block text-xs font-mono font-bold tracking-wider text-white pr-1">
+                MENU
+              </span>
+            </div>
+          </GlassSurface>
+        </button>
       </div>
-    </nav>
+
+      {/* ========================================================================= */}
+      {/* 3. SIDE GLASS NAVIGATION PANEL (Liquid Glass Effect from React Bits)      */}
+      {/* ========================================================================= */}
+      {isNavOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs transition-opacity duration-300"
+          aria-hidden="true"
+          onClick={() => setIsNavOpen(false)}
+        />
+      )}
+
+      <aside
+        ref={sidePanelRef}
+        aria-label="Site Navigation Panel"
+        className={`fixed top-0 left-0 bottom-0 z-50 w-72 sm:w-84 max-w-[85vw] h-full transform transition-transform duration-300 ease-out p-3 sm:p-4 pointer-events-auto select-none ${
+          isNavOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <GlassSurface
+          borderRadius={24}
+          borderWidth={1.5}
+          blur={28}
+          opacity={0.94}
+          className="w-full h-full p-5 sm:p-6 flex flex-col justify-between shadow-2xl border-white/20"
+        >
+          {/* Panel Header */}
+          <div className="flex items-center justify-between pb-4 border-b border-white/10">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee] animate-pulse" />
+              <h2 className="text-sm font-mono uppercase tracking-widest text-cyan-300 font-bold">
+                Navigation
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsNavOpen(false)}
+              aria-label="Close navigation panel"
+              className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-400"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Navigation Links */}
+          <nav className="flex-1 py-6 overflow-y-auto">
+            <ul className="flex flex-col gap-2">
+              {navLinks.map((nav, idx) => {
+                const isCurrent = active.toLowerCase() === nav.title.toLowerCase();
+                return (
+                  <li key={nav.id}>
+                    <a
+                      href={`#${nav.id}`}
+                      onClick={(e) => handleNavClick(e, nav.id, nav.title)}
+                      className={`group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 cursor-pointer text-sm sm:text-base font-semibold tracking-wide ${
+                        isCurrent
+                          ? "bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 shadow-xs shadow-cyan-400/20"
+                          : "text-gray-300 hover:text-white hover:bg-white/5 border border-transparent"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-[11px] font-mono text-gray-500 group-hover:text-cyan-400 transition-colors">
+                          0{idx + 1}
+                        </span>
+                        <span>{nav.title}</span>
+                      </div>
+                      {isCurrent && (
+                        <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_10px_#22d3ee]" />
+                      )}
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+
+          {/* Panel Footer */}
+          <div className="pt-4 border-t border-white/10 flex flex-col gap-2 text-xs font-mono text-gray-400">
+            <div className="flex items-center justify-between">
+              <span>Status</span>
+              <span className="text-emerald-400 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                Available for work
+              </span>
+            </div>
+            <p className="text-[10px] text-gray-500 mt-1">
+              Ganganathan • Senior Web Architect
+            </p>
+          </div>
+        </GlassSurface>
+      </aside>
+    </>
   );
 };
 

@@ -105,6 +105,10 @@ const EarthCanvas = () => {
         }}
       >
         <Suspense fallback={<CanvasLoader />}>
+          <ambientLight intensity={1.8} />
+          <directionalLight position={[5, 3, 5]} intensity={2.6} />
+          <directionalLight position={[-5, -3, -5]} intensity={1.4} />
+          <pointLight position={[0, 5, 0]} intensity={1.8} />
           <OrbitControls
             autoRotate
             enableZoom={false}

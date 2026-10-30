@@ -1,5 +1,6 @@
 "use client";
 import React, { useEffect, useRef } from "react";
+import Image from "next/image";
 import { gsap } from "gsap";
 import { useGSAP } from "@gsap/react";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
@@ -118,13 +119,31 @@ const Education = () => {
               {/* Neon Card */}
               <div className="w-full lg:w-[35%] xl:w-[45%] p-px bg-linear-to-r from-cyan-500/50 to-purple-500/50 rounded-sm">
                 <div className="p-6 bg-[#0b0b15] border-l-4 border-cyan-500 backdrop-blur-md">
-                  <div className="text-cyan-400 font-mono text-[10px] uppercase tracking-widest mb-2">
-                    Milestone 0{i + 1}
+                  <div className="flex items-start justify-between gap-3 sm:gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-cyan-400 font-mono text-[10px] uppercase tracking-widest mb-2">
+                        Milestone 0{i + 1}
+                      </div>
+                      <h3 className="text-lg sm:text-xl font-bold break-words">{exp.title}</h3>
+                      <p className="text-gray-400 text-sm mt-1">
+                        {exp.company_name}
+                      </p>
+                    </div>
+                    {exp.icon && (
+                      <div
+                        className="w-12 h-12 sm:w-14 sm:h-14 rounded-full shrink-0 flex items-center justify-center p-1.5 shadow-md border border-white/20 overflow-hidden"
+                        style={{ backgroundColor: exp.iconBg || "#ffffff" }}
+                      >
+                        <Image
+                          src={exp.icon}
+                          alt={exp.company_name}
+                          width={48}
+                          height={48}
+                          className="w-full h-full object-contain rounded-full"
+                        />
+                      </div>
+                    )}
                   </div>
-                  <h3 className="text-lg sm:text-xl font-bold">{exp.title}</h3>
-                  <p className="text-gray-400 text-sm mt-1">
-                    {exp.company_name}
-                  </p>
                   <div className="mt-4 pt-4 border-t border-white/10 flex justify-between font-mono text-[11px] text-purple-300">
                     <span>{exp.date}</span>
                     <span>{"score" in exp ? String(exp.score) : "Verified"}</span>

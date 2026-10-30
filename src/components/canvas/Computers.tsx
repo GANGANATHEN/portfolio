@@ -39,16 +39,19 @@ const Computers: FC<ComputersProps> = ({
       }}
       onPointerOut={() => setHovered(false)}
     >
-      <hemisphereLight intensity={2.15} groundColor="black" />
+      <ambientLight intensity={1.6} />
+      <hemisphereLight intensity={2.2} groundColor="#dedede" color="#ffffff" />
+      <directionalLight position={[10, 15, 10]} intensity={2.4} castShadow />
+      <directionalLight position={[-10, 10, -5]} intensity={1.2} />
       <spotLight
-        position={[-100, 50, 100]}
-        angle={0.12}
+        position={[-20, 50, 30]}
+        angle={0.25}
         penumbra={1}
-        intensity={4}
+        intensity={3.5}
         castShadow
         shadow-mapSize={1024}
       />
-      <pointLight intensity={2} />
+      <pointLight position={[0, 1, 0]} intensity={2.0} />
       <primitive
         object={scene}
         scale={getScale()}
@@ -216,7 +219,11 @@ const ComputersCanvas = () => {
   }, []);
 
   if (!mounted) {
-    return <WorkstationFallback />;
+    return (
+      <div className="w-full h-full flex items-center justify-center">
+        <div className="w-48 h-48 sm:w-64 sm:h-64 rounded-full bg-cyan-500/10 border border-cyan-500/20 animate-pulse" />
+      </div>
+    );
   }
 
   return (

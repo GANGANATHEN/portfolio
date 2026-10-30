@@ -131,6 +131,14 @@ function shouldEnforceProductionPersistence(): boolean {
   return process.env.VERCEL === "1" || process.env.REQUIRE_SUPABASE === "true" || process.env.NODE_ENV === "production";
 }
 
+function isTableMissingError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const err = error as { code?: string; message?: string };
+  const msg = err.message ? err.message.toLowerCase() : "";
+  const code = err.code || "";
+  return code === "42P01" || msg.includes("does not exist") || (msg.includes("relation") && msg.includes("table"));
+}
+
 /**
  * Check if Supabase Postgres is ready.
  * On Vercel (or when REQUIRE_SUPABASE=true), fails visibly and throws an error if Supabase is unreachable,
@@ -2585,8 +2593,14 @@ export async function registerActiveSessionRecord(
             reason: "superseded_by_new_login",
           });
 
-        if (superError && shouldEnforceProductionPersistence()) {
-          throw new DatabaseUnavailableError(`Supabase auth_superseded_sessions upsert failed: ${superError.message}`);
+        if (superError) {
+          if (isTableMissingError(superError)) {
+            console.warn(
+              "[Live Chat DB] Table 'auth_superseded_sessions' does not exist in Supabase. Apply migration 'supabase/migrations/20261030_single_active_session.sql'.",
+            );
+          } else if (shouldEnforceProductionPersistence()) {
+            throw new DatabaseUnavailableError(`Supabase auth_superseded_sessions upsert failed: ${superError.message}`);
+          }
         }
       }
 
@@ -2609,11 +2623,17 @@ export async function registerActiveSessionRecord(
           { onConflict: "account_type,account_id" },
         );
 
-      if (error && shouldEnforceProductionPersistence()) {
-        throw new DatabaseUnavailableError(`Supabase auth_active_sessions upsert failed: ${error.message}`);
+      if (error) {
+        if (isTableMissingError(error)) {
+          console.warn(
+            "[Live Chat DB] Table 'auth_active_sessions' does not exist in Supabase. Apply migration 'supabase/migrations/20261030_single_active_session.sql'.",
+          );
+        } else if (shouldEnforceProductionPersistence()) {
+          throw new DatabaseUnavailableError(`Supabase auth_active_sessions upsert failed: ${error.message}`);
+        }
       }
 
-      if (shouldEnforceProductionPersistence()) {
+      if (!error && shouldEnforceProductionPersistence()) {
         return normalizedRecord;
       }
     } catch (e) {
@@ -2699,7 +2719,14 @@ export async function getActiveSessionRecord(
         .maybeSingle();
 
       if (error) {
-        if (shouldEnforceProductionPersistence()) {
+        if (isTableMissingError(error)) {
+          console.warn(
+            "[Live Chat DB] Table 'auth_active_sessions' does not exist in Supabase. Apply migration 'supabase/migrations/20261030_single_active_session.sql'.",
+          );
+          const key = `${accountType}:${normAccountId}`;
+          const s = localStore.activeSessions[key];
+          return s && s.isActive ? s : null;
+        } else if (shouldEnforceProductionPersistence()) {
           throw new DatabaseUnavailableError(`Supabase auth_active_sessions query failed: ${error.message}`);
         }
       } else if (data) {
@@ -2748,7 +2775,12 @@ export async function isSessionTokenSuperseded(
         .maybeSingle();
 
       if (error) {
-        if (shouldEnforceProductionPersistence()) {
+        if (isTableMissingError(error)) {
+          console.warn(
+            "[Live Chat DB] Table 'auth_superseded_sessions' does not exist in Supabase. Apply migration 'supabase/migrations/20261030_single_active_session.sql'.",
+          );
+          return localStore.supersededSessions[tokenHash] || null;
+        } else if (shouldEnforceProductionPersistence()) {
           throw new DatabaseUnavailableError(`Supabase auth_superseded_sessions query failed: ${error.message}`);
         }
       } else if (data) {
