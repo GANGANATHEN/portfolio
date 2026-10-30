@@ -10,7 +10,7 @@ import {
   getLatestEmailOtp,
   incrementOtpAttempts,
   markOtpUsed,
-  setConversationEmailVerified,
+  associateConversationWithVerifiedEmail,
 } from "@/lib/live-chat/db";
 
 export async function POST(req: NextRequest) {
@@ -109,16 +109,35 @@ export async function POST(req: NextRequest) {
     // 1. Mark OTP as used (single use)
     await markOtpUsed(otpRecord.id);
 
-    // 2. Atomically set email_verified = true on conversation
-    const updatedConv = await setConversationEmailVerified(conversation.id, email);
+    // 2. Associate active session with verified email & restore existing conversation history if returning user
+    const { conversation: finalConv, isRestored } =
+      await associateConversationWithVerifiedEmail(conversation.id, tokenHash, email);
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       success: true,
       emailVerified: true,
-      visitorEmail: updatedConv?.visitorEmail || email,
+      visitorEmail: finalConv.visitorEmail || email,
+      visitorName: finalConv.visitorName,
+      conversationId: finalConv.id,
       emailNotificationsEnabled: true,
-      message: "Email verified successfully! You will receive email notifications when Ganganathan replies.",
+      restored: isRestored,
+      message: isRestored
+        ? "Email verified! Your previous chat history has been restored."
+        : "Email verified successfully! You will receive email notifications when Ganganathan replies.",
     });
+
+    // Ensure session cookie is refreshed and active
+    res.cookies.set({
+      name: VISITOR_COOKIE_NAME,
+      value: token,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 365,
+      path: "/",
+    });
+
+    return res;
   } catch (error) {
     console.error("[OTP Verify Exception]:", error);
     const isDbUnavailable =

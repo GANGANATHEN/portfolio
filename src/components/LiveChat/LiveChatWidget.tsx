@@ -712,18 +712,28 @@ export default function LiveChatWidget({
         setProfile((prev) => ({
           ...prev,
           visitorEmail: email,
+          visitorName: data.visitorName || prev.visitorName,
           emailVerified: true,
           emailNotificationsEnabled: true,
         }));
         setProfileForm((prev) => ({
           ...prev,
           visitorEmail: email,
+          visitorName: data.visitorName || prev.visitorName,
           emailVerified: true,
           emailNotificationsEnabled: true,
         }));
-        setOtpMessage("Email verified! Reply alerts are now active.");
+        setOtpMessage(
+          data.message ||
+            (data.restored
+              ? "Email verified! Previous chat history restored."
+              : "Email verified! Reply alerts are now active."),
+        );
         setOtpCode("");
         setOtpSent(false);
+
+        // Immediately fetch restored messages into view
+        await fetchMessages(true);
       } else {
         setOtpError(data.error || "Verification failed.");
       }
@@ -957,7 +967,7 @@ export default function LiveChatWidget({
                 onClick={() => setShowProfileModal(true)}
                 className="underline hover:text-white cursor-pointer font-medium ml-1"
               >
-                Get email alerts
+                Get email alerts / Restore chat
               </button>
             </div>
           )}
@@ -1026,7 +1036,7 @@ export default function LiveChatWidget({
                     <div className="bg-[#0e1621] border border-cyan-500/20 rounded-xl p-3 space-y-2.5">
                       <div className="flex items-center justify-between">
                         <span className="text-[11px] font-bold text-cyan-300">
-                          Verify Email for Reply Alerts
+                          Verify Email for Alerts & History Restoration
                         </span>
                         <button
                           type="button"

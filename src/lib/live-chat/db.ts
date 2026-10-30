@@ -442,6 +442,265 @@ export async function setConversationEmailVerified(
   });
 }
 
+/**
+ * Find existing verified conversation for an email
+ */
+export async function findConversationByVerifiedEmail(email: string): Promise<Conversation | null> {
+  const normalized = email.trim().toLowerCase();
+  const isSupabaseReady = await checkSupabaseAvailable();
+
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      const { data, error } = await serverClient
+        .from("chat_conversations")
+        .select("*")
+        .eq("visitor_email", normalized)
+        .eq("email_verified", true)
+        .eq("is_deleted", false)
+        .order("last_message_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (data && !error) {
+        return mapSupabaseConversation(data);
+      }
+    } catch (e) {
+      if (shouldEnforceProductionPersistence()) throw e;
+    }
+  }
+
+  // Local durable store fallback
+  let candidate: Conversation | null = null;
+  for (const conv of Object.values(localStore.conversations)) {
+    if (
+      conv.visitorEmail?.trim().toLowerCase() === normalized &&
+      conv.emailVerified &&
+      !conv.isDeleted
+    ) {
+      if (!candidate || new Date(conv.lastMessageAt).getTime() > new Date(candidate.lastMessageAt).getTime()) {
+        candidate = conv;
+      }
+    }
+  }
+  return candidate;
+}
+
+/**
+ * Associate active session with verified email and restore existing conversation history if returning user.
+ * Merges any anonymous messages sent in current session into the verified conversation.
+ */
+export async function associateConversationWithVerifiedEmail(
+  currentConversationId: string,
+  currentSessionTokenHash: string,
+  email: string,
+): Promise<{ conversation: Conversation; isRestored: boolean }> {
+  const now = new Date().toISOString();
+  const normalized = email.trim().toLowerCase();
+
+  const isSupabaseReady = await checkSupabaseAvailable();
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+
+      // Find existing verified conversation for this email (excluding current conversation)
+      const { data: existingConvs } = await serverClient
+        .from("chat_conversations")
+        .select("*")
+        .eq("visitor_email", normalized)
+        .eq("email_verified", true)
+        .eq("is_deleted", false)
+        .neq("id", currentConversationId)
+        .order("last_message_at", { ascending: false })
+        .limit(1);
+
+      const canonicalConv = existingConvs && existingConvs.length > 0 ? existingConvs[0] : null;
+
+      if (!canonicalConv) {
+        // No previous verified conversation -> mark current conversation verified
+        const { data: updated, error: updateError } = await serverClient
+          .from("chat_conversations")
+          .update({
+            visitor_email: normalized,
+            email_verified: true,
+            email_notifications_enabled: true,
+            updated_at: now,
+          })
+          .eq("id", currentConversationId)
+          .select()
+          .single();
+
+        if (updated && !updateError) {
+          const conv = mapSupabaseConversation(updated);
+          runWithLock(() => {
+            const loc = localStore.conversations[currentConversationId];
+            if (loc) {
+              loc.visitorEmail = normalized;
+              loc.emailVerified = true;
+              loc.emailNotificationsEnabled = true;
+              loc.updatedAt = now;
+              persistStoreToDisk();
+            }
+          });
+          return { conversation: conv, isRestored: false };
+        }
+      } else {
+        // Existing verified conversation found!
+        // 1. Check if current conversation has messages or attachments to migrate
+        const { data: currentMsgs } = await serverClient
+          .from("chat_messages")
+          .select("id")
+          .eq("conversation_id", currentConversationId);
+
+        const hasMessages = Array.isArray(currentMsgs) && currentMsgs.length > 0;
+
+        if (hasMessages) {
+          // Migrate messages to canonical conversation
+          await serverClient
+            .from("chat_messages")
+            .update({ conversation_id: canonicalConv.id })
+            .eq("conversation_id", currentConversationId);
+
+          // Migrate attachments
+          await serverClient
+            .from("chat_attachments")
+            .update({ conversation_id: canonicalConv.id })
+            .eq("conversation_id", currentConversationId);
+        }
+
+        // Migrate any OTP verification records
+        await serverClient
+          .from("chat_email_otps")
+          .update({ conversation_id: canonicalConv.id })
+          .eq("conversation_id", currentConversationId);
+
+        // 2. Safely delete the temporary conversation row (freeing up currentSessionTokenHash)
+        await serverClient
+          .from("chat_conversations")
+          .delete()
+          .eq("id", currentConversationId);
+
+        // 3. Attach currentSessionTokenHash to canonical conversation
+        const updatePayload: Record<string, unknown> = {
+          session_token_hash: currentSessionTokenHash,
+          visitor_email: normalized,
+          email_verified: true,
+          email_notifications_enabled: true,
+          updated_at: now,
+        };
+        if (hasMessages) {
+          updatePayload.last_message_at = now;
+        }
+
+        const { data: restoredConv, error: linkError } = await serverClient
+          .from("chat_conversations")
+          .update(updatePayload)
+          .eq("id", canonicalConv.id)
+          .select()
+          .single();
+
+        if (restoredConv && !linkError) {
+          const mapped = mapSupabaseConversation(restoredConv);
+
+          // Update localStore cache in lock
+          runWithLock(() => {
+            const tempMsgs = localStore.messages[currentConversationId] || [];
+            if (tempMsgs.length > 0) {
+              const existingMsgs = localStore.messages[canonicalConv.id] || [];
+              localStore.messages[canonicalConv.id] = [
+                ...existingMsgs,
+                ...tempMsgs.map((m) => ({ ...m, conversationId: canonicalConv.id })),
+              ];
+            }
+            delete localStore.messages[currentConversationId];
+            delete localStore.conversations[currentConversationId];
+            delete localStore.emailOtps[currentConversationId];
+            delete localStore.hashToId[canonicalConv.session_token_hash];
+
+            localStore.hashToId[currentSessionTokenHash] = canonicalConv.id;
+            localStore.conversations[canonicalConv.id] = mapped;
+            persistStoreToDisk();
+          });
+
+          return { conversation: mapped, isRestored: true };
+        }
+      }
+    } catch (e) {
+      if (shouldEnforceProductionPersistence()) throw e;
+      console.warn("[Live Chat DB] Error linking conversation in Supabase, using durable storage:", e);
+    }
+  }
+
+  // Durable store fallback
+  return runWithLock(() => {
+    let canonicalConv: Conversation | null = null;
+    for (const conv of Object.values(localStore.conversations)) {
+      if (
+        conv.id !== currentConversationId &&
+        conv.visitorEmail?.trim().toLowerCase() === normalized &&
+        conv.emailVerified &&
+        !conv.isDeleted
+      ) {
+        if (!canonicalConv || new Date(conv.lastMessageAt).getTime() > new Date(canonicalConv.lastMessageAt).getTime()) {
+          canonicalConv = conv;
+        }
+      }
+    }
+
+    if (!canonicalConv) {
+      const current = localStore.conversations[currentConversationId];
+      if (current) {
+        current.visitorEmail = normalized;
+        current.emailVerified = true;
+        current.emailNotificationsEnabled = true;
+        current.updatedAt = now;
+        localStore.conversations[currentConversationId] = current;
+        persistStoreToDisk();
+        return { conversation: current, isRestored: false };
+      }
+      throw new Error("Conversation not found");
+    }
+
+    // Merge messages from currentConversationId into canonicalConv
+    const currentMsgs = localStore.messages[currentConversationId] || [];
+    const hasMessages = currentMsgs.length > 0;
+    if (hasMessages) {
+      const targetMsgs = localStore.messages[canonicalConv.id] || [];
+      localStore.messages[canonicalConv.id] = [
+        ...targetMsgs,
+        ...currentMsgs.map((m) => ({ ...m, conversationId: canonicalConv!.id })),
+      ];
+      canonicalConv.lastMessageAt = now;
+    }
+
+    // Migrate attachments
+    for (const att of Object.values(localStore.attachments)) {
+      if (att.conversationId === currentConversationId) {
+        att.conversationId = canonicalConv.id;
+      }
+    }
+
+    // Clean up temporary conversation
+    delete localStore.messages[currentConversationId];
+    delete localStore.conversations[currentConversationId];
+    delete localStore.emailOtps[currentConversationId];
+    delete localStore.hashToId[canonicalConv.sessionTokenHash];
+
+    // Link new session hash to canonical conversation
+    canonicalConv.sessionTokenHash = currentSessionTokenHash;
+    canonicalConv.visitorEmail = normalized;
+    canonicalConv.emailVerified = true;
+    canonicalConv.emailNotificationsEnabled = true;
+    canonicalConv.updatedAt = now;
+
+    localStore.hashToId[currentSessionTokenHash] = canonicalConv.id;
+    localStore.conversations[canonicalConv.id] = canonicalConv;
+    persistStoreToDisk();
+
+    return { conversation: canonicalConv, isRestored: true };
+  });
+}
+
 // ==============================================================================
 // OTP STORAGE & VERIFICATION METHODS
 // ==============================================================================
@@ -1650,6 +1909,44 @@ export async function claimNotificationLock(
     persistStoreToDisk();
 
     return true;
+  });
+}
+
+/**
+ * Safely release or rollback notification lock when email dispatch fails
+ */
+export async function releaseNotificationLock(
+  conversationId: string,
+  recipientType: "owner" | "visitor",
+  previousTimestamp: string | null = null,
+): Promise<void> {
+  const isSupabaseReady = await checkSupabaseAvailable();
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      const field =
+        recipientType === "owner" ? "last_owner_notification_at" : "last_visitor_notification_at";
+
+      await serverClient
+        .from("chat_conversations")
+        .update({ [field]: previousTimestamp })
+        .eq("id", conversationId);
+    } catch {
+      // Non-fatal lock rollback
+    }
+  }
+
+  runWithLock(() => {
+    const conv = localStore.conversations[conversationId];
+    if (conv) {
+      if (recipientType === "owner") {
+        conv.lastOwnerNotificationAt = previousTimestamp;
+      } else {
+        conv.lastVisitorNotificationAt = previousTimestamp;
+      }
+      localStore.conversations[conversationId] = conv;
+      persistStoreToDisk();
+    }
   });
 }
 

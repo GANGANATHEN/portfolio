@@ -24,6 +24,10 @@ import {
   getOrCreateConversationByHash,
   updateConversationProfile,
   setConversationEmailVerified,
+  findConversationByVerifiedEmail,
+  associateConversationWithVerifiedEmail,
+  releaseNotificationLock,
+  claimNotificationLock,
   createEmailOtp,
   getLatestEmailOtp,
   incrementOtpAttempts,
@@ -308,5 +312,101 @@ describe("Secure Email OTP Verification & Strict Privacy Suite", () => {
     } finally {
       delete process.env.REQUIRE_SUPABASE;
     }
+  });
+
+  test("11. Verified email restores existing conversation history across different browser sessions", async () => {
+    // Session 1: User starts a chat and verifies email
+    const token1 = generateSecureToken();
+    const hash1 = hashToken(token1);
+    const conv1 = await getOrCreateConversationByHash(hash1, "Returning User");
+
+    const email = "returning.visitor@example.com";
+
+    // User sends message in session 1
+    const msg1 = await addMessage({
+      conversationId: conv1.id,
+      senderType: "visitor",
+      content: "Session 1: My initial conversation inquiry",
+    });
+    assert.ok(msg1.id);
+
+    // User verifies email in session 1
+    const { conversation: verified1, isRestored: isRestored1 } =
+      await associateConversationWithVerifiedEmail(conv1.id, hash1, email);
+    assert.equal(verified1.emailVerified, true);
+    assert.equal(verified1.visitorEmail, email);
+    assert.equal(isRestored1, false, "First verification should establish canonical conversation");
+
+    // Session 2: User leaves website, opens incognito window with a fresh session token
+    const token2 = generateSecureToken();
+    const hash2 = hashToken(token2);
+    assert.notEqual(hash1, hash2, "Session tokens must be distinct");
+
+    const conv2 = await getOrCreateConversationByHash(hash2, "Visitor");
+    assert.notEqual(conv1.id, conv2.id, "Initially creates temporary conversation for new session");
+
+    // User sends an anonymous message before verifying in session 2
+    const msg2 = await addMessage({
+      conversationId: conv2.id,
+      senderType: "visitor",
+      content: "Session 2: I am back on a new device!",
+    });
+    assert.ok(msg2.id);
+
+    // User requests OTP and verifies the same email in session 2
+    const { conversation: restoredConv, isRestored: isRestored2 } =
+      await associateConversationWithVerifiedEmail(conv2.id, hash2, email);
+
+    assert.equal(isRestored2, true, "Must detect returning verified identity and restore conversation");
+    assert.equal(restoredConv.id, conv1.id, "Must link to the canonical conversation ID");
+    assert.equal(restoredConv.sessionTokenHash, hash2, "Must update sessionTokenHash to current session");
+
+    // Fetch messages for session 2
+    const messages = await getMessages(restoredConv.id);
+    const contents = messages.map((m) => m.content);
+
+    assert.ok(
+      contents.includes("Session 1: My initial conversation inquiry"),
+      "Must restore message from Session 1",
+    );
+    assert.ok(
+      contents.includes("Session 2: I am back on a new device!"),
+      "Must merge message sent in Session 2 prior to verification",
+    );
+
+    // Verify lookup by session 2 hash directly resolves to canonical conversation
+    const lookupByHash2 = await getOrCreateConversationByHash(hash2);
+    assert.equal(lookupByHash2.id, conv1.id, "Hash 2 must directly resolve to canonical conversation");
+
+    // Verify isolation: A different user cannot see these messages
+    const tokenOther = generateSecureToken();
+    const hashOther = hashToken(tokenOther);
+    const convOther = await getOrCreateConversationByHash(hashOther);
+    const otherMessages = await getMessages(convOther.id);
+    assert.equal(
+      otherMessages.some((m) => m.content.includes("Session 1")),
+      false,
+      "Another user must not access restored conversation messages",
+    );
+  });
+
+  test("12. Notification lock release allows subsequent notifications when dispatch fails", async () => {
+    const token = generateSecureToken();
+    const conv = await getOrCreateConversationByHash(hashToken(token), "Lock Test");
+
+    // Claim lock
+    const claimed = await claimNotificationLock(conv.id, "owner", 10 * 60 * 1000);
+    assert.equal(claimed, true, "First claim must succeed");
+
+    // Immediate second claim should be locked/throttled
+    const secondClaim = await claimNotificationLock(conv.id, "owner", 10 * 60 * 1000);
+    assert.equal(secondClaim, false, "Second claim must be throttled");
+
+    // Release lock (simulating failed dispatch rollback)
+    await releaseNotificationLock(conv.id, "owner", null);
+
+    // Third claim should succeed again immediately
+    const thirdClaim = await claimNotificationLock(conv.id, "owner", 10 * 60 * 1000);
+    assert.equal(thirdClaim, true, "Claim after lock release must succeed immediately");
   });
 });

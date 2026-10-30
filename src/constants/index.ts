@@ -66,6 +66,7 @@ export const technologies = [
 ];
 
 export const experiences = [
+  // Education
   {
     title: "B.E. Computer Science & Engineering",
     company_name: "P.S.R Engineering College, Sivakasi",
@@ -74,6 +75,8 @@ export const experiences = [
     date: "2020 - 2024",
     score: "9.1 CGPA",
   },
+
+  // Certifications & Courses
   {
     title: "Web Design for Beginners",
     company_name: "University of Moratuwa",
@@ -87,24 +90,8 @@ export const experiences = [
     company_name: "Cisco Networking Academy",
     icon: cisco,
     iconBg: "#F0F8FF",
-    date: "CISCO JS Course",
+    date: "JavaScript Course",
     score: "Certified",
-  },
-  {
-    title: "Front End Web Development",
-    company_name: "devtown",
-    icon: devtown,
-    iconBg: "#F0F8FF",
-    date: "Bootcamp",
-    score: "Graduate",
-  },
-  {
-    title: "Web Development",
-    company_name: "Eminent",
-    icon: eminent,
-    iconBg: "#F0F8FF",
-    date: "Internship Training",
-    score: "Completed",
   },
   {
     title: "Data Science Certificate",
@@ -120,15 +107,43 @@ export const experiences = [
     icon: aws,
     iconBg: "#F0F8FF",
     date: "Cloud Architecting",
-    score: "AWS Certified",
+    score: "Completed",
   },
   {
-    title: "RedHat Training",
-    company_name: "RedHat",
+    title: "Red Hat Training",
+    company_name: "Red Hat",
     icon: redhat,
     iconBg: "#F0F8FF",
-    date: "RedHat",
+    date: "Red Hat Training",
     score: "Certified",
+  },
+  {
+    title: "Front End Web Development",
+    company_name: "Devtown",
+    icon: devtown,
+    iconBg: "#F0F8FF",
+    date: "Bootcamp",
+    score: "Graduate",
+  },
+
+  // Internship
+  {
+    title: "Web Development",
+    company_name: "Eminent",
+    icon: eminent,
+    iconBg: "#F0F8FF",
+    date: "Internship Training",
+    score: "Completed",
+  },
+
+  // Professional Experience
+  {
+    title: "Front-End Developer",
+    company_name: "IMUII Technology",
+    icon: redhat,
+    iconBg: "#F0F8FF",
+    date: "Apr 2025 - Present",
+    score: "Full-Time",
   },
 ];
 

@@ -1,5 +1,5 @@
 import type { Conversation } from "./types";
-import { claimNotificationLock, logNotification } from "./db";
+import { claimNotificationLock, releaseNotificationLock, logNotification } from "./db";
 import crypto from "crypto";
 
 const DEFAULT_COOLDOWN_MINUTES = 10;
@@ -90,12 +90,37 @@ export async function sendEmailViaResend({
   html: string;
   correlationId?: string;
   eventType?: "owner_new_message" | "visitor_owner_reply" | "visitor_otp";
-}): Promise<{ success: boolean; errorCategory?: NotificationLogEvent["providerErrorCategory"]; messageId?: string }> {
-  const apiKey = process.env.RESEND_API_KEY?.trim();
+}): Promise<{
+  success: boolean;
+  errorCategory?: NotificationLogEvent["providerErrorCategory"];
+  messageId?: string;
+  errorMessage?: string;
+}> {
+  const apiKey = (process.env.RESEND_API_KEY || "").replace(/^["']|["']$/g, "").trim();
   const recipientDomain = getRecipientDomain(to);
 
-  // Missing or placeholder API key -> simulated mode
+  // Missing or placeholder API key
   if (!apiKey || apiKey === "" || apiKey.includes("your-resend-api-key")) {
+    if (process.env.NODE_ENV === "production") {
+      logNotificationStructured({
+        correlationId,
+        eventType,
+        status: "failed",
+        recipientDomain,
+        providerErrorCategory: "missing_key",
+        timestamp: new Date().toISOString(),
+      });
+      console.warn(
+        `[Notification Engine] RESEND_API_KEY is not configured in production environment. Email cannot be dispatched.`,
+      );
+      return {
+        success: false,
+        errorCategory: "missing_key",
+        errorMessage: "RESEND_API_KEY is not configured.",
+      };
+    }
+
+    // In dev / test mode without key, simulate dispatch
     logNotificationStructured({
       correlationId,
       eventType,
@@ -104,6 +129,25 @@ export async function sendEmailViaResend({
       timestamp: new Date().toISOString(),
     });
     return { success: true };
+  }
+
+  // RFC 2606 reserved testing domains (e.g. example.com, example.org, test) for non-routable QA / test automation
+  const isReservedTestDomain =
+    recipientDomain === "example.com" ||
+    recipientDomain === "example.org" ||
+    recipientDomain === "example.net" ||
+    recipientDomain === "test" ||
+    recipientDomain.endsWith(".example.com");
+
+  if (isReservedTestDomain) {
+    logNotificationStructured({
+      correlationId,
+      eventType,
+      status: "simulated",
+      recipientDomain,
+      timestamp: new Date().toISOString(),
+    });
+    return { success: true, messageId: `sim_${crypto.randomUUID()}` };
   }
 
   const fromEmail = getSanitizedFromEmail();
@@ -131,7 +175,10 @@ export async function sendEmailViaResend({
       const errMsg = (data?.message || "").toLowerCase();
 
       if (res.status === 401 || res.status === 403) {
-        if (errMsg.includes("verify a domain") || errMsg.includes("testing emails to your own email address")) {
+        if (
+          errMsg.includes("verify a domain") ||
+          errMsg.includes("testing emails to your own email address")
+        ) {
           errorCategory = "domain_verification_required";
         } else {
           errorCategory = "auth_error";
@@ -151,7 +198,11 @@ export async function sendEmailViaResend({
         timestamp: new Date().toISOString(),
       });
 
-      return { success: false, errorCategory };
+      return {
+        success: false,
+        errorCategory,
+        errorMessage: data?.message || "Email provider dispatch failed.",
+      };
     }
 
     logNotificationStructured({
@@ -176,14 +227,17 @@ export async function sendEmailViaResend({
       timestamp: new Date().toISOString(),
     });
 
-    return { success: false, errorCategory: category };
+    return { success: false, errorCategory: category, errorMessage: "Network or timeout error" };
   }
 }
 
 /**
  * Send 6-digit OTP verification email to visitor
  */
-export async function sendOtpVerificationEmail(to: string, otp: string): Promise<boolean> {
+export async function sendOtpVerificationEmail(
+  to: string,
+  otp: string,
+): Promise<{ success: boolean; errorCategory?: string; messageId?: string; errorMessage?: string }> {
   const correlationId = crypto.randomUUID();
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 540px; margin: 0 auto; background: #050816; color: #f3f3f3; padding: 36px 32px; border-radius: 16px; border: 1px solid #27272a;">
@@ -219,7 +273,7 @@ export async function sendOtpVerificationEmail(to: string, otp: string): Promise
     eventType: "visitor_otp",
   });
 
-  return res.success;
+  return res;
 }
 
 /**
@@ -230,13 +284,19 @@ export async function sendOtpVerificationEmail(to: string, otp: string): Promise
  * - Cooldown is strictly independent per conversation.
  */
 export async function notifyOwnerOfNewMessage(
-  conversation: Pick<Conversation, "id" | "visitorName" | "visitorEmail" | "emailVerified">,
+  conversation: Pick<
+    Conversation,
+    "id" | "visitorName" | "visitorEmail" | "emailVerified" | "lastOwnerNotificationAt"
+  >,
   messageContent: string,
-): Promise<{ status: "sent" | "throttled" | "failed"; errorCategory?: string }> {
-  const ownerEmail = (process.env.OWNER_EMAIL || "green11.dev@gmail.com").trim();
+): Promise<{ status: "sent" | "throttled" | "failed"; errorCategory?: string; errorMessage?: string }> {
+  const ownerEmail = (process.env.OWNER_EMAIL || "green11.dev@gmail.com")
+    .replace(/^["']|["']$/g, "")
+    .trim();
   const cooldownMs = getCooldownMs();
   const preview = messageContent.slice(0, 160);
   const correlationId = crypto.randomUUID();
+  const previousNotificationAt = (conversation as Conversation).lastOwnerNotificationAt || null;
 
   // 1. ATOMIC LOCK CLAIM
   const lockClaimed = await claimNotificationLock(conversation.id, "owner", cooldownMs);
@@ -287,6 +347,11 @@ export async function notifyOwnerOfNewMessage(
     eventType: "owner_new_message",
   });
 
+  if (!dispatchResult.success) {
+    // Release the atomic lock so future visitor messages are not blocked by a failed attempt!
+    await releaseNotificationLock(conversation.id, "owner", previousNotificationAt);
+  }
+
   const finalStatus = dispatchResult.success ? "sent" : "failed";
   await logNotification({
     conversationId: conversation.id,
@@ -296,7 +361,11 @@ export async function notifyOwnerOfNewMessage(
     messagePreview: preview,
   });
 
-  return { status: finalStatus, errorCategory: dispatchResult.errorCategory };
+  return {
+    status: finalStatus,
+    errorCategory: dispatchResult.errorCategory,
+    errorMessage: dispatchResult.errorMessage,
+  };
 }
 
 /**
@@ -308,10 +377,10 @@ export async function notifyOwnerOfNewMessage(
 export async function notifyVisitorOfOwnerReply(
   conversation: Pick<
     Conversation,
-    "id" | "visitorName" | "visitorEmail" | "emailNotificationsEnabled" | "emailVerified"
+    "id" | "visitorName" | "visitorEmail" | "emailNotificationsEnabled" | "emailVerified" | "lastVisitorNotificationAt"
   >,
   replyContent: string,
-): Promise<{ status: "sent" | "throttled" | "failed" | "skipped"; errorCategory?: string }> {
+): Promise<{ status: "sent" | "throttled" | "failed" | "skipped"; errorCategory?: string; errorMessage?: string }> {
   if (
     !conversation.visitorEmail ||
     !conversation.emailNotificationsEnabled ||
@@ -323,6 +392,7 @@ export async function notifyVisitorOfOwnerReply(
   const cooldownMs = getCooldownMs();
   const preview = replyContent.slice(0, 160);
   const correlationId = crypto.randomUUID();
+  const previousNotificationAt = (conversation as Conversation).lastVisitorNotificationAt || null;
 
   // 1. ATOMIC LOCK CLAIM FOR VISITOR REPLY
   const lockClaimed = await claimNotificationLock(conversation.id, "visitor", cooldownMs);
@@ -369,6 +439,10 @@ export async function notifyVisitorOfOwnerReply(
     eventType: "visitor_owner_reply",
   });
 
+  if (!dispatchResult.success) {
+    await releaseNotificationLock(conversation.id, "visitor", previousNotificationAt);
+  }
+
   const finalStatus = dispatchResult.success ? "sent" : "failed";
   await logNotification({
     conversationId: conversation.id,
@@ -378,5 +452,9 @@ export async function notifyVisitorOfOwnerReply(
     messagePreview: preview,
   });
 
-  return { status: finalStatus, errorCategory: dispatchResult.errorCategory };
+  return {
+    status: finalStatus,
+    errorCategory: dispatchResult.errorCategory,
+    errorMessage: dispatchResult.errorMessage,
+  };
 }

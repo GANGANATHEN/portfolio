@@ -120,9 +120,48 @@ export async function POST(req: NextRequest) {
     await createEmailOtp(conversation.id, email, otpHash, expiresAt);
 
     // Send email via configured provider
-    const dispatched = await sendOtpVerificationEmail(email, otp);
-    if (!dispatched) {
-      console.warn(`[OTP Request] Email dispatch failed for ${email}`);
+    const dispatchResult = await sendOtpVerificationEmail(email, otp);
+    if (!dispatchResult.success) {
+      console.warn(`[OTP Request] Email dispatch failed for ${email}:`, dispatchResult.errorCategory);
+
+      if (dispatchResult.errorCategory === "domain_verification_required") {
+        return NextResponse.json(
+          {
+            error:
+              "Email delivery is restricted: The configured email provider test domain can only send to the registered administrator address (green11.dev@gmail.com). To enable OTPs for external visitors, a custom domain must be verified in Resend.",
+            code: "DOMAIN_VERIFICATION_REQUIRED",
+          },
+          { status: 422 },
+        );
+      }
+
+      if (dispatchResult.errorCategory === "missing_key") {
+        return NextResponse.json(
+          {
+            error: "Email verification service is currently unconfigured. Please try again later.",
+            code: "EMAIL_SERVICE_UNAVAILABLE",
+          },
+          { status: 503 },
+        );
+      }
+
+      if (dispatchResult.errorCategory === "rate_limit") {
+        return NextResponse.json(
+          {
+            error: "Too many email requests. Please wait a few minutes before trying again.",
+            code: "PROVIDER_RATE_LIMIT",
+          },
+          { status: 429 },
+        );
+      }
+
+      return NextResponse.json(
+        {
+          error: "Failed to send verification code to your email. Please verify the address and try again.",
+          code: "DISPATCH_FAILED",
+        },
+        { status: 502 },
+      );
     }
 
     return NextResponse.json({

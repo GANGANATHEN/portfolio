@@ -601,6 +601,197 @@ async function runE2E() {
   assert.ok(freshHomeHtml.includes('Featured'), "Home page must include Featured Projects heading");
   console.log("✔ /admin/commands and redesigned portfolio sections confirmed rendering properly");
 
+  console.log("\n=== 14. Testing Verified Email Identity & Returning User History Restoration ===");
+  // Step 1: Alice creates Session A and sends a message
+  const aliceSessARes = await fetch(`${BASE_URL}/api/live-chat/session`);
+  const aliceCookieA = aliceSessARes.headers.get("set-cookie");
+  assert.ok(aliceCookieA);
+
+  const aliceEmail = `alice.${Date.now()}@example.com`;
+  const aliceMsg1 = await fetch(`${BASE_URL}/api/live-chat/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: aliceCookieA },
+    body: JSON.stringify({ content: "Alice initial inquiry in Session A" }),
+  });
+  assert.equal(aliceMsg1.status, 200);
+
+  // Request OTP for Alice
+  const aliceOtpReq = await fetch(`${BASE_URL}/api/live-chat/otp/request`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: aliceCookieA },
+    body: JSON.stringify({ email: aliceEmail }),
+  });
+  assert.equal(aliceOtpReq.status, 200);
+
+  // Read latest OTP hash for Alice from Supabase or local store
+  const { getServerSupabase } = await import("../src/lib/supabase.ts");
+  const { hashOtp } = await import("../src/lib/live-chat/security.ts");
+  let otpHashA = null;
+
+  try {
+    const supabase = getServerSupabase();
+    const { data: supaOtps } = await supabase
+      .from("chat_email_otps")
+      .select("otp_hash")
+      .eq("email", aliceEmail)
+      .is("used_at", null)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (supaOtps && supaOtps.length > 0) {
+      otpHashA = supaOtps[0].otp_hash;
+    }
+  } catch {}
+
+  if (!otpHashA) {
+    const dataDir = process.env.VERCEL ? "/tmp/.data" : path.join(process.cwd(), ".data");
+    const storeFile = path.join(dataDir, "live-chat-store.json");
+    if (fs.existsSync(storeFile)) {
+      const store = JSON.parse(fs.readFileSync(storeFile, "utf-8"));
+      for (const otps of Object.values(store.emailOtps || {})) {
+        const found = otps.find((o) => o.email === aliceEmail && !o.usedAt);
+        if (found) {
+          otpHashA = found.otpHash;
+          break;
+        }
+      }
+    }
+  }
+
+  assert.ok(otpHashA, "Should locate OTP hash record");
+
+  // In test environment, solve 6-digit candidate for the hash in ~2 seconds
+  let aliceOtpCode = null;
+  for (let c = 0; c < 1000000; c++) {
+    const candidate = String(c).padStart(6, "0");
+    if (hashOtp(aliceEmail, candidate) === otpHashA) {
+      aliceOtpCode = candidate;
+      break;
+    }
+  }
+
+  assert.ok(aliceOtpCode, "Should locate valid OTP code");
+
+  const aliceVerifyResA = await fetch(`${BASE_URL}/api/live-chat/otp/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: aliceCookieA },
+    body: JSON.stringify({ email: aliceEmail, otp: aliceOtpCode }),
+  });
+  assert.equal(aliceVerifyResA.status, 200);
+  const aliceVerifyDataA = await aliceVerifyResA.json();
+  assert.equal(aliceVerifyDataA.emailVerified, true);
+  console.log("✔ Alice verified email in Session A");
+
+  // Step 2: Alice returns in Session B (simulating incognito / new device)
+  const aliceSessBRes = await fetch(`${BASE_URL}/api/live-chat/session`);
+  const aliceCookieB = aliceSessBRes.headers.get("set-cookie");
+  assert.notEqual(aliceCookieA, aliceCookieB, "Session B must have fresh cookie");
+
+  // Alice sends a new message in Session B before verifying
+  const aliceMsg2 = await fetch(`${BASE_URL}/api/live-chat/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: aliceCookieB },
+    body: JSON.stringify({ content: "Alice follow-up in Session B" }),
+  });
+  assert.equal(aliceMsg2.status, 200);
+
+  // Alice requests OTP in Session B
+  const aliceOtpReqB = await fetch(`${BASE_URL}/api/live-chat/otp/request`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: aliceCookieB },
+    body: JSON.stringify({ email: aliceEmail }),
+  });
+  assert.equal(aliceOtpReqB.status, 200);
+
+  // Read OTP for Session B
+  let otpHashB = null;
+  try {
+    const supabase = getServerSupabase();
+    const { data: supaOtpsB } = await supabase
+      .from("chat_email_otps")
+      .select("otp_hash")
+      .eq("email", aliceEmail)
+      .is("used_at", null)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (supaOtpsB && supaOtpsB.length > 0) {
+      otpHashB = supaOtpsB[0].otp_hash;
+    }
+  } catch {}
+
+  if (!otpHashB) {
+    const dataDir = process.env.VERCEL ? "/tmp/.data" : path.join(process.cwd(), ".data");
+    const storeFile = path.join(dataDir, "live-chat-store.json");
+    if (fs.existsSync(storeFile)) {
+      const store = JSON.parse(fs.readFileSync(storeFile, "utf-8"));
+      for (const otps of Object.values(store.emailOtps || {})) {
+        const found = otps.find((o) => o.email === aliceEmail && !o.usedAt);
+        if (found) {
+          otpHashB = found.otpHash;
+          break;
+        }
+      }
+    }
+  }
+
+  assert.ok(otpHashB, "Should locate second OTP hash record");
+
+  let aliceOtpCodeB = null;
+  for (let c = 0; c < 1000000; c++) {
+    const candidate = String(c).padStart(6, "0");
+    if (hashOtp(aliceEmail, candidate) === otpHashB) {
+      aliceOtpCodeB = candidate;
+      break;
+    }
+  }
+
+  assert.ok(aliceOtpCodeB, "Should locate second OTP code");
+
+  // Alice verifies in Session B
+  const aliceVerifyResB = await fetch(`${BASE_URL}/api/live-chat/otp/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: aliceCookieB },
+    body: JSON.stringify({ email: aliceEmail, otp: aliceOtpCodeB }),
+  });
+  assert.equal(aliceVerifyResB.status, 200);
+  const aliceVerifyDataB = await aliceVerifyResB.json();
+  assert.equal(aliceVerifyDataB.emailVerified, true);
+  assert.equal(aliceVerifyDataB.restored, true, "Session B must report restored: true");
+  console.log("✔ Alice verified in Session B, backend restored previous canonical conversation");
+
+  // Step 3: Fetch messages in Session B and assert complete history is present
+  const aliceMsgsBRes = await fetch(`${BASE_URL}/api/live-chat/messages`, {
+    headers: { Cookie: aliceCookieB },
+  });
+  assert.equal(aliceMsgsBRes.status, 200);
+  const aliceMsgsB = await aliceMsgsBRes.json();
+  const aliceContentsB = aliceMsgsB.messages.map((m) => m.content);
+
+  assert.ok(
+    aliceContentsB.includes("Alice initial inquiry in Session A"),
+    "Session B messages MUST include message from Session A",
+  );
+  assert.ok(
+    aliceContentsB.includes("Alice follow-up in Session B"),
+    "Session B messages MUST include message sent before verification in Session B",
+  );
+  console.log("✔ Returning verified identity restored complete message history across sessions (found %d messages)", aliceMsgsB.messages.length);
+
+  // Step 4: Verify privacy isolation: Bob cannot see Alice's restored conversation
+  const bobSessRes = await fetch(`${BASE_URL}/api/live-chat/session`);
+  const bobCookie = bobSessRes.headers.get("set-cookie");
+  const bobMsgsRes = await fetch(`${BASE_URL}/api/live-chat/messages`, {
+    headers: { Cookie: bobCookie },
+  });
+  const bobMsgs = await bobMsgsRes.json();
+  assert.equal(
+    bobMsgs.messages.some((m) => m.content.includes("Alice")),
+    false,
+    "Bob MUST NOT see Alice's restored messages",
+  );
+  console.log("✔ Privacy check passed: Distinct user has zero access to Alice's restored conversation");
+
   console.log("\n=======================================================");
   console.log("🎉 ALL E2E FUNCTIONAL, SECURITY, AND PRIVACY CHECKS PASSED!");
   console.log("=======================================================");

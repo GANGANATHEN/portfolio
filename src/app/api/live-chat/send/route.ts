@@ -102,7 +102,12 @@ export async function POST(req: NextRequest) {
 
     // Safely await email notification to prevent serverless execution freeze
     try {
-      await notifyOwnerOfNewMessage(conversation, message.content);
+      const notifyResult = await notifyOwnerOfNewMessage(conversation, message.content);
+      if (notifyResult.status === "failed") {
+        console.warn(
+          `[Owner Notification Warning] Admin email alert failed (${notifyResult.errorCategory || "unknown"}): ${notifyResult.errorMessage || "Provider error"}. Message is durably saved.`,
+        );
+      }
     } catch (err) {
       console.error("[Owner Notification Exception]:", err);
     }
