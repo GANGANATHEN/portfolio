@@ -31,6 +31,7 @@ import {
   LogOut,
   Key,
   ShieldAlert,
+  Images,
 } from "lucide-react";
 import LIVE_CHAT_ICON from "../../../public/assets/bot/Livechatbot.svg";
 import TelegramEmojiPicker from "./TelegramEmojiPicker";
@@ -167,8 +168,10 @@ export default function LiveChatWidget({
   const [dismissedRetentionNotice, setDismissedRetentionNotice] = useState(false);
 
   // Sync unreadCount with parent if embedded
+  const lastReportedUnreadRef = useRef<number | null>(null);
   useEffect(() => {
-    if (onUnreadCountChange) {
+    if (onUnreadCountChange && lastReportedUnreadRef.current !== unreadCount) {
+      lastReportedUnreadRef.current = unreadCount;
       onUnreadCountChange(unreadCount);
     }
   }, [unreadCount, onUnreadCountChange]);
@@ -210,7 +213,14 @@ export default function LiveChatWidget({
   const [deletingMsgId, setDeletingMsgId] = useState<string | null>(null);
   const [copiedToast, setCopiedToast] = useState(false);
 
+  // Scroll & Instagram-style reply navigation refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLElement>(null);
+  const isNearBottomRef = useRef(true);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+  const highlightTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const messageElementsRef = useRef<Map<string, HTMLDivElement>>(new Map());
+
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
@@ -240,11 +250,68 @@ export default function LiveChatWidget({
     return () => clearInterval(timer);
   }, [otpCooldown]);
 
-  // Auto-scroll to bottom of messages
+  // Track container scroll position to respect reading older messages
+  const handleContainerScroll = useCallback(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const threshold = 120;
+    isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
+  }, []);
+
+  // Dedicated mouse-wheel handler preventing main window fighting
+  const handleWheel = useCallback((e: React.WheelEvent<HTMLElement>) => {
+    e.stopPropagation();
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    el.scrollTop += e.deltaY;
+  }, []);
+
+  // Auto-scroll to bottom of messages container
   const scrollToBottom = useCallback((smooth = true) => {
-    messagesEndRef.current?.scrollIntoView({
-      behavior: smooth ? "smooth" : "auto",
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTo({
+        top: messagesContainerRef.current.scrollHeight,
+        behavior: smooth ? "smooth" : "auto",
+      });
+    } else {
+      messagesEndRef.current?.scrollIntoView({
+        behavior: smooth ? "smooth" : "auto",
+      });
+    }
+  }, []);
+
+  // Instagram-style reply navigation
+  const handleReplyReferenceClick = useCallback((targetId: string | null | undefined) => {
+    if (!targetId) return;
+    const container = messagesContainerRef.current;
+    const targetEl = messageElementsRef.current.get(targetId);
+
+    // Trigger target highlight
+    setHighlightedMessageId(null);
+    requestAnimationFrame(() => {
+      setHighlightedMessageId(targetId);
     });
+
+    if (container && targetEl) {
+      const containerRect = container.getBoundingClientRect();
+      const targetRect = targetEl.getBoundingClientRect();
+
+      // Case A & C: Is the target message already within the visible vertical range?
+      const isVisible =
+        targetRect.top >= containerRect.top &&
+        targetRect.bottom <= containerRect.bottom;
+
+      // Case B: Outside the visible range -> scroll smoothly to it
+      if (!isVisible) {
+        targetEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    }
+
+    // Auto-remove highlight after 1.5s
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    highlightTimerRef.current = setTimeout(() => {
+      setHighlightedMessageId(null);
+    }, 1500);
   }, []);
 
   // Online/Offline detection
@@ -366,11 +433,34 @@ export default function LiveChatWidget({
             const sending = prev.filter((m) => m.status === "sending");
             const backendIds = new Set(data.messages.map((m: MessageItem) => m.id));
             const remainingSending = sending.filter((m) => !backendIds.has(m.id));
-            return [...data.messages, ...remainingSending];
+            const merged = [...data.messages, ...remainingSending];
+
+            if (prev.length === merged.length) {
+              let hasChanges = false;
+              for (let i = 0; i < prev.length; i++) {
+                const a = prev[i];
+                const b = merged[i];
+                if (
+                  a.id !== b.id ||
+                  a.content !== b.content ||
+                  a.status !== b.status ||
+                  a.isDeleted !== b.isDeleted ||
+                  a.isEdited !== b.isEdited ||
+                  JSON.stringify(a.reactions) !== JSON.stringify(b.reactions) ||
+                  (a.attachments?.length || 0) !== (b.attachments?.length || 0)
+                ) {
+                  hasChanges = true;
+                  break;
+                }
+              }
+              if (!hasChanges) return prev;
+            }
+            return merged;
           });
         }
         if (typeof data.unreadVisitorCount === "number") {
-          setUnreadCount(markRead ? 0 : data.unreadVisitorCount);
+          const newCount = markRead ? 0 : data.unreadVisitorCount;
+          setUnreadCount((prev) => (prev !== newCount ? newCount : prev));
         }
         setConnectionStatus("connected");
         setConnectionErrorMsg("");
@@ -476,9 +566,9 @@ export default function LiveChatWidget({
     };
   }, [isOpen, fetchMessages]);
 
-  // Scroll to bottom when new messages arrive
+  // Scroll to bottom when new messages arrive (only if user is already near bottom)
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && isNearBottomRef.current) {
       scrollToBottom(true);
     }
   }, [messages.length, isOpen, scrollToBottom]);
@@ -494,7 +584,7 @@ export default function LiveChatWidget({
     const optimisticMessage: MessageItem = {
       id: tempId,
       senderType: "visitor",
-      content: text || (hasAttachments ? `[Attached ${pendingAttachments[0].fileName}]` : ""),
+      content: text || (hasAttachments ? `[Attached ${pendingAttachments.map((a) => a.fileName).join(", ")}]` : ""),
       createdAt: new Date().toISOString(),
       status: "sending",
       replyPreview: replyingTo
@@ -528,8 +618,10 @@ export default function LiveChatWidget({
     setMessages((prev) => [...prev, optimisticMessage]);
     setInputValue("");
     setReplyingTo(null);
-    setPendingAttachments([]);
     setIsSending(true);
+
+    // Auto-scroll immediately on send
+    requestAnimationFrame(() => scrollToBottom(true));
 
     try {
       const res = await fetch("/api/live-chat/send", {
@@ -540,6 +632,8 @@ export default function LiveChatWidget({
       });
 
       if (res.ok) {
+        // Reset pending attachments ONLY on successful send!
+        setPendingAttachments([]);
         const data = await res.json();
         if (data.message?.conversationId && !conversationId) {
           setConversationId(data.message.conversationId);
@@ -569,50 +663,82 @@ export default function LiveChatWidget({
     }
   };
 
-  // Handle file attachment upload
+  // Handle file attachment upload (supports multiple files & successive additions)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
     setUploadError("");
-    const isVideo = file.type.startsWith("video/");
-    const maxSize = isVideo ? MAX_VIDEO_SIZE : MAX_DOCUMENT_IMAGE_AUDIO_SIZE;
+    const oversizedFiles: string[] = [];
+    const validFiles: File[] = [];
 
-    if (file.size > maxSize) {
-      setUploadError(`File exceeds ${isVideo ? "50MB" : "25MB"} limit.`);
+    files.forEach((file) => {
+      const isVideo = file.type.startsWith("video/");
+      const maxSize = isVideo ? MAX_VIDEO_SIZE : MAX_DOCUMENT_IMAGE_AUDIO_SIZE;
+      if (file.size > maxSize) {
+        oversizedFiles.push(file.name);
+      } else {
+        validFiles.push(file);
+      }
+    });
+
+    if (oversizedFiles.length > 0) {
+      setUploadError(
+        `Oversized: ${oversizedFiles.join(", ")} exceed size limit (25MB docs/images, 50MB video).`
+      );
+    }
+
+    if (validFiles.length === 0) {
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
 
     setIsUploadingAttachment(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      if (conversationId) {
-        formData.append("conversationId", conversationId);
-      }
+    const newAttachments: AttachmentItem[] = [];
+    const failedFiles: string[] = [];
 
-      const res = await fetch("/api/live-chat/attachments", {
-        method: "POST",
-        credentials: "include",
-        body: formData,
-      });
-
-      const data = await res.json();
-      if (res.ok && data.attachment) {
-        if (data.attachment.conversationId && !conversationId) {
-          setConversationId(data.attachment.conversationId);
+    for (const file of validFiles) {
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        if (conversationId) {
+          formData.append("conversationId", conversationId);
         }
-        setPendingAttachments((prev) => [...prev, data.attachment]);
-      } else {
-        setUploadError(data.error || "Failed to upload attachment.");
+
+        const res = await fetch("/api/live-chat/attachments", {
+          method: "POST",
+          credentials: "include",
+          body: formData,
+        });
+
+        const data = await res.json();
+        if (res.ok && data.attachment) {
+          if (data.attachment.conversationId && !conversationId) {
+            setConversationId(data.attachment.conversationId);
+          }
+          newAttachments.push(data.attachment);
+        } else {
+          failedFiles.push(`${file.name} (${data.error || "upload error"})`);
+        }
+      } catch {
+        failedFiles.push(`${file.name} (network error)`);
       }
-    } catch {
-      setUploadError("Upload network error. Please try again.");
-    } finally {
-      setIsUploadingAttachment(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
     }
+
+    if (newAttachments.length > 0) {
+      setPendingAttachments((prev) => [...prev, ...newAttachments]);
+    }
+
+    if (failedFiles.length > 0) {
+      setUploadError((prev) =>
+        prev
+          ? `${prev} Failed: ${failedFiles.join(", ")}`
+          : `Failed to upload: ${failedFiles.join(", ")}`
+      );
+    }
+
+    setIsUploadingAttachment(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   // Handle toggling reaction
@@ -1709,8 +1835,11 @@ export default function LiveChatWidget({
 
           {/* Telegram Messages Stream */}
           <section
+            ref={messagesContainerRef}
+            onScroll={handleContainerScroll}
+            onWheel={handleWheel}
             data-lenis-prevent
-            className="custom-scrollbar flex-1 overflow-y-auto px-3 py-4 space-y-2.5 bg-[#0e1621]"
+            className="custom-scrollbar flex-1 min-h-0 overscroll-contain overflow-y-auto px-3 py-4 space-y-2.5 bg-[#0e1621]"
           >
             {sessionSupersededMsg && (
               <div className="bg-red-950/90 border border-red-500/50 text-red-200 text-xs p-3 rounded-xl flex items-center justify-between gap-2 shadow-lg mb-3">
@@ -1785,18 +1914,40 @@ export default function LiveChatWidget({
                     )}
 
                     <div
-                      className={`flex flex-col group relative ${
+                      key={m.id}
+                      ref={(el) => {
+                        if (el) {
+                          messageElementsRef.current.set(m.id, el);
+                        } else {
+                          messageElementsRef.current.delete(m.id);
+                        }
+                      }}
+                      className={`flex flex-col group relative transition-all duration-300 rounded-xl ${
+                        highlightedMessageId === m.id
+                          ? "bg-cyan-500/20 ring-2 ring-cyan-400 p-1.5"
+                          : ""
+                      } ${
                         isVisitor ? "items-end" : "items-start"
                       }`}
                     >
                       {/* Quoted Reply Reference */}
                       {m.replyPreview && (
                         <div
-                          className={`mb-0.5 text-[11px] px-2.5 py-1 rounded-t-xl bg-black/30 border-l-2 max-w-[85%] truncate flex items-center gap-1.5 ${
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => handleReplyReferenceClick(m.replyToId || m.replyPreview?.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              handleReplyReferenceClick(m.replyToId || m.replyPreview?.id);
+                            }
+                          }}
+                          className={`mb-0.5 text-[11px] px-2.5 py-1 rounded-t-xl bg-black/30 hover:bg-black/50 transition-colors border-l-2 max-w-[85%] truncate flex items-center gap-1.5 cursor-pointer select-none ${
                             isVisitor
                               ? "border-cyan-300 text-cyan-200 mr-1"
                               : "border-purple-400 text-purple-200 ml-1"
                           }`}
+                          title="Click to view replied message"
                         >
                           <Reply className="w-3 h-3 rotate-180 shrink-0 opacity-70" />
                           <span className="font-bold shrink-0">
@@ -1854,141 +2005,193 @@ export default function LiveChatWidget({
                         )}
 
                         {/* Media & Attachments */}
-                        {m.attachments && m.attachments.length > 0 && !m.isDeleted && (
-                          <div className="mt-2 pt-2 border-t border-white/10 space-y-1.5">
-                            {/* If multiple attachments, show Download All */}
-                            {m.attachments.length > 1 && (
-                              <div className="flex items-center justify-between text-[11px] text-gray-400 pb-1 px-1">
-                                <span className="font-mono text-[10px]">{m.attachments.length} files attached</span>
+                        {m.attachments && m.attachments.length > 0 && !m.isDeleted && (() => {
+                          const hasMultiple = m.attachments.length > 1;
+                          const isCompact = m.attachments.length > 2;
+                          const visibleAttachments = isCompact ? m.attachments.slice(0, 2) : m.attachments;
+                          const remainingCount = m.attachments.length - 2;
+
+                          return (
+                            <div className="mt-2 pt-2 border-t border-white/10 space-y-1.5">
+                              {/* If multiple attachments, show Download All */}
+                              {hasMultiple && (
+                                <div className="flex items-center justify-between text-[11px] text-gray-400 pb-1 px-1">
+                                  <span className="font-mono text-[10px]">{m.attachments.length} files attached</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setActiveViewerAttachment(m.attachments![0]);
+                                      setActiveViewerList(m.attachments!);
+                                    }}
+                                    className="text-cyan-300 hover:underline flex items-center gap-1 font-mono font-bold cursor-pointer"
+                                  >
+                                    <Download className="w-3 h-3" />
+                                    <span>Download All</span>
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* Responsive Grid for multiple attachments */}
+                              <div className={hasMultiple ? "grid grid-cols-2 gap-1.5" : "flex flex-col gap-1.5"}>
+                                {visibleAttachments.map((att, attIdx) => {
+                                  const mime = att.mimeType.toLowerCase();
+                                  const isImg = mime.startsWith("image/");
+                                  const isVid = mime.startsWith("video/");
+                                  const isAud = mime.startsWith("audio/");
+                                  const isPdf = mime === "application/pdf" || att.fileName.toLowerCase().endsWith(".pdf");
+                                  const streamUrl = `/api/live-chat/attachments/${att.id}`;
+                                  const downloadUrl = `${streamUrl}?download=true`;
+                                  const isSecondWithRemaining = isCompact && attIdx === 1 && remainingCount > 0;
+
+                                  return (
+                                    <div
+                                      key={att.id}
+                                      className="relative bg-black/40 rounded-xl p-2 border border-white/10 flex flex-col gap-1.5 overflow-hidden group/card hover:border-cyan-500/40 transition-colors"
+                                    >
+                                      {isSecondWithRemaining && (
+                                        <div
+                                          role="button"
+                                          tabIndex={0}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setActiveViewerAttachment(m.attachments![1]);
+                                            setActiveViewerList(m.attachments!);
+                                          }}
+                                          onKeyDown={(e) => {
+                                            if (e.key === "Enter" || e.key === " ") {
+                                              e.preventDefault();
+                                              setActiveViewerAttachment(m.attachments![1]);
+                                              setActiveViewerList(m.attachments!);
+                                            }
+                                          }}
+                                          className="absolute inset-0 z-20 bg-black/75 hover:bg-black/65 transition-colors backdrop-blur-xs flex flex-col items-center justify-center text-white cursor-pointer select-none rounded-xl"
+                                          title={`View ${remainingCount} more attachments`}
+                                        >
+                                          <span className="text-xl font-bold font-mono text-cyan-300">+{remainingCount}</span>
+                                          <span className="text-[10px] text-gray-200 uppercase tracking-wider font-semibold">more</span>
+                                        </div>
+                                      )}
+
+                                      {isImg && (
+                                        <div
+                                          className="relative overflow-hidden rounded-lg group/img cursor-pointer max-h-48 flex items-center justify-center bg-black/60"
+                                          onClick={() => {
+                                            setActiveViewerAttachment(att);
+                                            setActiveViewerList(m.attachments || []);
+                                          }}
+                                        >
+                                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                                          <img
+                                            src={streamUrl}
+                                            alt={att.fileName}
+                                            onLoad={() => {
+                                              if (isNearBottomRef.current) {
+                                                scrollToBottom(false);
+                                              }
+                                            }}
+                                            className="max-h-48 max-w-full rounded-lg object-contain hover:scale-102 transition-transform"
+                                          />
+                                          <button
+                                            type="button"
+                                            aria-label="View Fullscreen"
+                                            className="absolute top-1.5 right-1.5 p-1 rounded-md bg-black/70 text-white opacity-0 group-hover/img:opacity-100 transition-opacity cursor-pointer"
+                                          >
+                                            <Maximize2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      )}
+
+                                      {isVid && (
+                                        <div
+                                          className="relative rounded-lg overflow-hidden bg-black max-h-48 cursor-pointer group/vid"
+                                          onClick={() => {
+                                            setActiveViewerAttachment(att);
+                                            setActiveViewerList(m.attachments || []);
+                                          }}
+                                        >
+                                          <video
+                                            className="max-h-48 w-full rounded-lg object-contain bg-black"
+                                            preload="metadata"
+                                          >
+                                            <source src={streamUrl} type={att.mimeType} />
+                                          </video>
+                                          <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover/vid:bg-black/20 transition-colors">
+                                            <div className="w-10 h-10 rounded-full bg-cyan-500/90 text-black flex items-center justify-center font-bold shadow-lg">
+                                              ▶
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {isAud && (
+                                        <audio controls className="w-full mt-1">
+                                          <source src={streamUrl} type={att.mimeType} />
+                                          Your browser does not support audio playback.
+                                        </audio>
+                                      )}
+
+                                      {!isImg && !isVid && !isAud && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setActiveViewerAttachment(att);
+                                            setActiveViewerList(m.attachments || []);
+                                          }}
+                                          className="flex items-center gap-2 p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-left w-full cursor-pointer"
+                                        >
+                                          <div className="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0">
+                                            {isPdf ? (
+                                              <FileText className="w-4 h-4 text-red-400" />
+                                            ) : (
+                                              <FileText className="w-4 h-4" />
+                                            )}
+                                          </div>
+                                          <div className="min-w-0 flex-1">
+                                            <p className="text-xs font-mono text-white truncate font-medium">{att.fileName}</p>
+                                            <p className="text-[10px] text-gray-400 font-mono">
+                                              {Math.round(att.fileSize / 1024)} KB
+                                            </p>
+                                          </div>
+                                        </button>
+                                      )}
+
+                                      <div className="flex items-center justify-between text-[11px] text-gray-300 pt-0.5">
+                                        <span className="truncate max-w-[130px] font-mono flex items-center gap-1 text-[10px]">
+                                          <FileText className="w-3 h-3 opacity-70 shrink-0" />
+                                          <span className="truncate">{att.fileName}</span>
+                                        </span>
+                                        <a
+                                          href={downloadUrl}
+                                          download={att.fileName}
+                                          className="text-cyan-300 hover:underline font-semibold flex items-center gap-1 shrink-0 ml-1 text-[10px]"
+                                          title="Download attachment"
+                                        >
+                                          <Download className="w-3 h-3" />
+                                          <span>Save</span>
+                                        </a>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Compact "Click to view all" bar for >2 attachments */}
+                              {isCompact && (
                                 <button
                                   type="button"
                                   onClick={() => {
                                     setActiveViewerAttachment(m.attachments![0]);
                                     setActiveViewerList(m.attachments!);
                                   }}
-                                  className="text-cyan-300 hover:underline flex items-center gap-1 font-mono font-bold cursor-pointer"
+                                  className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-black/40 hover:bg-black/60 border border-white/10 text-cyan-300 hover:text-cyan-200 text-xs font-mono transition-colors cursor-pointer select-none"
                                 >
-                                  <Download className="w-3 h-3" />
-                                  <span>Download All</span>
+                                  <Images className="w-3.5 h-3.5 text-cyan-400" />
+                                  <span>Click to view all {m.attachments.length} attachments</span>
                                 </button>
-                              </div>
-                            )}
-
-                            {/* Responsive Grid for multiple attachments */}
-                            <div className={m.attachments.length > 1 ? "grid grid-cols-2 gap-1.5" : "flex flex-col gap-1.5"}>
-                              {m.attachments.map((att) => {
-                                const mime = att.mimeType.toLowerCase();
-                                const isImg = mime.startsWith("image/");
-                                const isVid = mime.startsWith("video/");
-                                const isAud = mime.startsWith("audio/");
-                                const isPdf = mime === "application/pdf" || att.fileName.toLowerCase().endsWith(".pdf");
-                                const streamUrl = `/api/live-chat/attachments/${att.id}`;
-                                const downloadUrl = `${streamUrl}?download=true`;
-
-                                return (
-                                  <div
-                                    key={att.id}
-                                    className="bg-black/40 rounded-xl p-2 border border-white/10 flex flex-col gap-1.5 overflow-hidden group/card hover:border-cyan-500/40 transition-colors"
-                                  >
-                                    {isImg && (
-                                      <div
-                                        className="relative overflow-hidden rounded-lg group/img cursor-pointer max-h-48 flex items-center justify-center bg-black/60"
-                                        onClick={() => {
-                                          setActiveViewerAttachment(att);
-                                          setActiveViewerList(m.attachments || []);
-                                        }}
-                                      >
-                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                        <img
-                                          src={streamUrl}
-                                          alt={att.fileName}
-                                          className="max-h-48 max-w-full rounded-lg object-contain hover:scale-102 transition-transform"
-                                        />
-                                        <button
-                                          type="button"
-                                          aria-label="View Fullscreen"
-                                          className="absolute top-1.5 right-1.5 p-1 rounded-md bg-black/70 text-white opacity-0 group-hover/img:opacity-100 transition-opacity cursor-pointer"
-                                        >
-                                          <Maximize2 className="w-3.5 h-3.5" />
-                                        </button>
-                                      </div>
-                                    )}
-
-                                    {isVid && (
-                                      <div
-                                        className="relative rounded-lg overflow-hidden bg-black max-h-48 cursor-pointer group/vid"
-                                        onClick={() => {
-                                          setActiveViewerAttachment(att);
-                                          setActiveViewerList(m.attachments || []);
-                                        }}
-                                      >
-                                        <video
-                                          className="max-h-48 w-full rounded-lg object-contain bg-black"
-                                          preload="metadata"
-                                        >
-                                          <source src={streamUrl} type={att.mimeType} />
-                                        </video>
-                                        <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover/vid:bg-black/20 transition-colors">
-                                          <div className="w-10 h-10 rounded-full bg-cyan-500/90 text-black flex items-center justify-center font-bold shadow-lg">
-                                            ▶
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {isAud && (
-                                      <audio controls className="w-full mt-1">
-                                        <source src={streamUrl} type={att.mimeType} />
-                                        Your browser does not support audio playback.
-                                      </audio>
-                                    )}
-
-                                    {!isImg && !isVid && !isAud && (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setActiveViewerAttachment(att);
-                                          setActiveViewerList(m.attachments || []);
-                                        }}
-                                        className="flex items-center gap-2 p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-left w-full cursor-pointer"
-                                      >
-                                        <div className="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0">
-                                          {isPdf ? (
-                                            <FileText className="w-4 h-4 text-red-400" />
-                                          ) : (
-                                            <FileText className="w-4 h-4" />
-                                          )}
-                                        </div>
-                                        <div className="min-w-0 flex-1">
-                                          <p className="text-xs font-mono text-white truncate font-medium">{att.fileName}</p>
-                                          <p className="text-[10px] text-gray-400 font-mono">
-                                            {Math.round(att.fileSize / 1024)} KB
-                                          </p>
-                                        </div>
-                                      </button>
-                                    )}
-
-                                    <div className="flex items-center justify-between text-[11px] text-gray-300 pt-0.5">
-                                      <span className="truncate max-w-[130px] font-mono flex items-center gap-1 text-[10px]">
-                                        <FileText className="w-3 h-3 opacity-70 shrink-0" />
-                                        <span className="truncate">{att.fileName}</span>
-                                      </span>
-                                      <a
-                                        href={downloadUrl}
-                                        download={att.fileName}
-                                        className="text-cyan-300 hover:underline font-semibold flex items-center gap-1 shrink-0 ml-1 text-[10px]"
-                                        title="Download attachment"
-                                      >
-                                        <Download className="w-3 h-3" />
-                                        <span>Save</span>
-                                      </a>
-                                    </div>
-                                  </div>
-                                );
-                              })}
+                              )}
                             </div>
-                          </div>
-                        )}
+                          );
+                        })()}
 
                         {/* Telegram Timestamp & Status in Bubble Corner */}
                         <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-gray-300/80 font-mono select-none">
@@ -2306,6 +2509,7 @@ export default function LiveChatWidget({
                 <input
                   ref={fileInputRef}
                   type="file"
+                  multiple
                   accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.zip"
                   onChange={handleFileUpload}
                   className="hidden"

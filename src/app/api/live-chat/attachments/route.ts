@@ -233,12 +233,32 @@ export async function POST(req: NextRequest) {
       const isSupabaseReady = await checkSupabaseAvailable();
       if (isSupabaseReady) {
         const serverClient = getServerSupabase();
-        const { error: storageError } = await serverClient.storage
+        let { error: storageError } = await serverClient.storage
           .from("chat-attachments")
           .upload(storedRelativePath, buffer, {
             contentType: mimeType,
             upsert: true,
           });
+
+        if (storageError && (storageError.message?.includes("Bucket not found") || storageError.message?.includes("not found"))) {
+          // Self-heal: ensure bucket exists and retry
+          try {
+            await serverClient.storage.createBucket("chat-attachments", {
+              public: false,
+              fileSizeLimit: 52428800,
+            });
+            const retryRes = await serverClient.storage
+              .from("chat-attachments")
+              .upload(storedRelativePath, buffer, {
+                contentType: mimeType,
+                upsert: true,
+              });
+            storageError = retryRes.error;
+          } catch (createErr) {
+            console.warn("[Attachment Upload] Failed to auto-create bucket:", createErr);
+          }
+        }
+
         if (storageError) {
           console.warn("[Attachment Upload] Supabase Storage upload notice:", storageError.message);
         }
