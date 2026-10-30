@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { VISITOR_COOKIE_NAME, hashToken } from "@/lib/live-chat/security";
-import { getConversationByHash, toggleMessageReaction, DatabaseUnavailableError } from "@/lib/live-chat/db";
+import { VISITOR_COOKIE_NAME } from "@/lib/live-chat/security";
+import { toggleMessageReaction, DatabaseUnavailableError } from "@/lib/live-chat/db";
+import {
+  validateVisitorSession,
+  createSessionRejectedResponse,
+} from "@/lib/live-chat/session-registry";
 
 const CURATED_EMOJIS = new Set([
   "👍", "❤️", "🔥", "🎉", "😂", "😮", "😢", "🙏", "🚀", "👀",
@@ -17,13 +21,15 @@ function isValidEmoji(str: string): boolean {
 
 export async function POST(req: NextRequest) {
   try {
-    const token = req.cookies.get(VISITOR_COOKIE_NAME)?.value;
-    if (!token || token.length < 32) {
+    const auth = await validateVisitorSession(req);
+    if (!auth.valid) {
+      if (auth.clearCookie) {
+        return createSessionRejectedResponse(auth, VISITOR_COOKIE_NAME);
+      }
       return NextResponse.json({ error: "Unauthorized session." }, { status: 401 });
     }
 
-    const tokenHash = hashToken(token);
-    const conversation = await getConversationByHash(tokenHash);
+    const conversation = auth.conversation;
     if (!conversation) {
       return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
     }

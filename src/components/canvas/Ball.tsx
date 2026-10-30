@@ -22,7 +22,9 @@ const Ball = ({ imgUrl }: { imgUrl: string | { src: string } }) => {
       <mesh castShadow receiveShadow scale={2.75}>
         <icosahedronGeometry args={[1, 1]} />
         <meshStandardMaterial
-          color="#fff8eb"
+          color="#232631"
+          roughness={0.4}
+          metalness={0.1}
           polygonOffset
           polygonOffsetFactor={-5}
           flatShading

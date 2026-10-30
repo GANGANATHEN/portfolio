@@ -320,7 +320,7 @@ describe("Secure Email OTP Verification & Strict Privacy Suite", () => {
     const hash1 = hashToken(token1);
     const conv1 = await getOrCreateConversationByHash(hash1, "Returning User");
 
-    const email = "returning.visitor@example.com";
+    const email = `returning.visitor.${Date.now()}.${Math.random().toString(36).slice(2, 7)}@example.com`;
 
     // User sends message in session 1
     const msg1 = await addMessage({

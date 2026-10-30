@@ -20,10 +20,10 @@ const Earth = ({ setHovered, isMobile }: EarthProps) => {
       }}
       onPointerOut={() => setHovered(false)}
     >
-      {/* Dynamic scale based on device */}
+      {/* Responsive scale preventing horizontal overflow on mobile screens */}
       <primitive
         object={scene}
-        scale={isMobile ? 3.4 : 2.5}
+        scale={isMobile ? 2.2 : 2.6}
         position={[0, 0, 0]}
         rotation={[0, 0, 0]}
       />
@@ -31,57 +31,92 @@ const Earth = ({ setHovered, isMobile }: EarthProps) => {
   );
 };
 
+class EarthErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="w-full h-full flex items-center justify-center">
+          <div className="w-44 h-44 sm:w-60 sm:h-60 rounded-full bg-radial from-cyan-500/20 via-blue-900/40 to-black border-2 border-cyan-400/30 flex items-center justify-center animate-pulse shadow-2xl shadow-cyan-500/20">
+            <span className="text-4xl">🌍</span>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const EarthCanvas = () => {
   const [isHovered, setIsHovered] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [isMobile, setIsMobile] = useState(() =>
-    typeof window !== "undefined"
-      ? window.matchMedia("(max-width: 500px)").matches
-      : false,
-  );
+  const [isMobile, setIsMobile] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia("(max-width: 500px)");
-
-    const handleChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
-    mediaQuery.addEventListener("change", handleChange);
-    return () => mediaQuery.removeEventListener("change", handleChange);
+    setMounted(true);
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 640);
+    };
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
+  if (!mounted) {
+    return (
+      <div className="w-full h-full flex items-center justify-center">
+        <div className="w-40 h-40 sm:w-56 sm:h-56 rounded-full bg-cyan-500/10 border border-cyan-500/20 animate-pulse" />
+      </div>
+    );
+  }
+
   return (
-    <Canvas
-      shadows
-      frameloop="demand"
-      dpr={[1, 2]}
-      gl={{ preserveDrawingBuffer: true }}
-      camera={{
-        fov: isMobile ? 55 : 45, // Wider FOV for mobile
-        near: 0.1,
-        far: 1000,
-        position: isMobile ? [-6, 3, 8] : [-4, 3, 6], // Adjust camera distance
-      }}
-      style={{
-        width: "100%",
-        height: "100%",
-        overflow:"visible",
-        cursor: isHovered ? (isDragging ? "grabbing" : "grab") : "auto",
-      }}
-    >
-      <Suspense fallback={<CanvasLoader />}>
-        <OrbitControls
-          autoRotate
-          enableZoom={false}
-          maxPolarAngle={Math.PI / 2}
-          minPolarAngle={Math.PI / 2}
-          enableRotate={true}
-          // enableRotate={isHovered || isDragging}
-          onStart={() => setIsDragging(true)}
-          onEnd={() => setIsDragging(false)}
-        />
-        <Earth setHovered={setIsHovered} isMobile={isMobile} />
-        <Preload all />
-      </Suspense>
-    </Canvas>
+    <EarthErrorBoundary>
+      <Canvas
+        shadows
+        frameloop="demand"
+        dpr={[1, 2]}
+        gl={{ preserveDrawingBuffer: false, antialias: true, alpha: true }}
+        camera={{
+          fov: isMobile ? 45 : 45,
+          near: 0.1,
+          far: 1000,
+          position: isMobile ? [-4.5, 2.5, 6] : [-4, 3, 6],
+        }}
+        onCreated={(state) => {
+          state.gl.setClearColor(0x020205, 0);
+        }}
+        style={{
+          width: "100%",
+          height: "100%",
+          cursor: isHovered ? (isDragging ? "grabbing" : "grab") : "auto",
+        }}
+      >
+        <Suspense fallback={<CanvasLoader />}>
+          <OrbitControls
+            autoRotate
+            enableZoom={false}
+            maxPolarAngle={Math.PI / 2}
+            minPolarAngle={Math.PI / 2}
+            enableRotate={true}
+            onStart={() => setIsDragging(true)}
+            onEnd={() => setIsDragging(false)}
+          />
+          <Earth setHovered={setIsHovered} isMobile={isMobile} />
+          <Preload all />
+        </Suspense>
+      </Canvas>
+    </EarthErrorBoundary>
   );
 };
 

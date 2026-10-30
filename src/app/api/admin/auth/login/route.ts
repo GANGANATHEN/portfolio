@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   ADMIN_COOKIE_NAME,
-  createAdminSessionToken,
   verifyAdminPassword,
 } from "@/lib/live-chat/security";
+import { registerAdminActiveSession } from "@/lib/live-chat/session-registry";
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid admin password." }, { status: 401 });
     }
 
-    const token = createAdminSessionToken();
+    const { token } = await registerAdminActiveSession();
     const res = NextResponse.json({ success: true, message: "Authenticated successfully." });
 
     res.cookies.set({

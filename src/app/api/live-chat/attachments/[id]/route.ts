@@ -2,14 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   VISITOR_COOKIE_NAME,
   ADMIN_COOKIE_NAME,
-  hashToken,
-  verifyAdminSessionToken,
 } from "@/lib/live-chat/security";
 import {
   getAttachmentById,
-  getConversationByHash,
   ATTACHMENTS_DIR,
 } from "@/lib/live-chat/db";
+import {
+  validateAdminSession,
+  validateVisitorSession,
+  createSessionRejectedResponse,
+} from "@/lib/live-chat/session-registry";
 import fs from "fs";
 import path from "path";
 
@@ -30,18 +32,24 @@ export async function GET(
 
     // 1. Authorization Check
     const adminCookie = req.cookies.get(ADMIN_COOKIE_NAME)?.value;
-    const isAdmin = verifyAdminSessionToken(adminCookie);
-
     let isAuthorized = false;
-    if (isAdmin) {
-      isAuthorized = true;
-    } else {
-      const visitorCookie = req.cookies.get(VISITOR_COOKIE_NAME)?.value;
-      if (visitorCookie) {
-        const conv = await getConversationByHash(hashToken(visitorCookie));
-        if (conv && conv.id === attachment.conversationId) {
-          isAuthorized = true;
-        }
+
+    if (adminCookie) {
+      const authAdmin = await validateAdminSession(req);
+      if (authAdmin.authenticated) {
+        isAuthorized = true;
+      } else if (authAdmin.clearCookie) {
+        return createSessionRejectedResponse(authAdmin, ADMIN_COOKIE_NAME);
+      }
+    }
+
+    if (!isAuthorized) {
+      const authVisitor = await validateVisitorSession(req);
+      if (!authVisitor.valid && authVisitor.clearCookie) {
+        return createSessionRejectedResponse(authVisitor, VISITOR_COOKIE_NAME);
+      }
+      if (authVisitor.valid && authVisitor.conversation && authVisitor.conversation.id === attachment.conversationId) {
+        isAuthorized = true;
       }
     }
 

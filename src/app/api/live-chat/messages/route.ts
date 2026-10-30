@@ -8,16 +8,22 @@ import {
   deleteMessage,
   DatabaseUnavailableError,
 } from "@/lib/live-chat/db";
+import {
+  validateVisitorSession,
+  createSessionRejectedResponse,
+} from "@/lib/live-chat/session-registry";
 
 export async function GET(req: NextRequest) {
   try {
-    const token = req.cookies.get(VISITOR_COOKIE_NAME)?.value;
-    if (!token || token.length < 32) {
+    const auth = await validateVisitorSession(req);
+    if (!auth.valid) {
+      if (auth.clearCookie) {
+        return createSessionRejectedResponse(auth, VISITOR_COOKIE_NAME);
+      }
       return NextResponse.json({ messages: [], unreadVisitorCount: 0 });
     }
 
-    const tokenHash = hashToken(token);
-    const conversation = await getConversationByHash(tokenHash);
+    const conversation = auth.conversation;
     if (!conversation) {
       return NextResponse.json({ messages: [], unreadVisitorCount: 0 });
     }
@@ -38,6 +44,7 @@ export async function GET(req: NextRequest) {
     const messages = await getMessages(conversation.id, {
       limit: isNaN(limitParam) ? 100 : limitParam,
       before: beforeParam,
+      role: "visitor",
     });
 
     return NextResponse.json({
@@ -67,13 +74,15 @@ export async function GET(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const token = req.cookies.get(VISITOR_COOKIE_NAME)?.value;
-    if (!token || token.length < 32) {
+    const auth = await validateVisitorSession(req);
+    if (!auth.valid) {
+      if (auth.clearCookie) {
+        return createSessionRejectedResponse(auth, VISITOR_COOKIE_NAME);
+      }
       return NextResponse.json({ error: "Unauthorized session." }, { status: 401 });
     }
 
-    const tokenHash = hashToken(token);
-    const conversation = await getConversationByHash(tokenHash);
+    const conversation = auth.conversation;
     if (!conversation) {
       return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
     }
@@ -115,13 +124,15 @@ export async function PATCH(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const token = req.cookies.get(VISITOR_COOKIE_NAME)?.value;
-    if (!token || token.length < 32) {
+    const auth = await validateVisitorSession(req);
+    if (!auth.valid) {
+      if (auth.clearCookie) {
+        return createSessionRejectedResponse(auth, VISITOR_COOKIE_NAME);
+      }
       return NextResponse.json({ error: "Unauthorized session." }, { status: 401 });
     }
 
-    const tokenHash = hashToken(token);
-    const conversation = await getConversationByHash(tokenHash);
+    const conversation = auth.conversation;
     if (!conversation) {
       return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
     }

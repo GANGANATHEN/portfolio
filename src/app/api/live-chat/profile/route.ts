@@ -10,11 +10,24 @@ import {
   getOrCreateConversationByHash,
   updateConversationProfile,
 } from "@/lib/live-chat/db";
+import {
+  validateVisitorSession,
+  revokeVisitorSession,
+  createSessionRejectedResponse,
+} from "@/lib/live-chat/session-registry";
 
 export async function POST(req: NextRequest) {
   try {
     let token = req.cookies.get(VISITOR_COOKIE_NAME)?.value;
     let isNewSession = false;
+
+    // Check single active session validity
+    if (token && token.length >= 32) {
+      const auth = await validateVisitorSession(req);
+      if (!auth.valid && auth.clearCookie) {
+        return createSessionRejectedResponse(auth, VISITOR_COOKIE_NAME);
+      }
+    }
 
     if (!token || token.length < 32 || !/^[0-9a-fA-F]+$/.test(token)) {
       token = generateSecureToken();
@@ -22,11 +35,35 @@ export async function POST(req: NextRequest) {
     }
 
     const tokenHash = hashToken(token);
-    await getOrCreateConversationByHash(tokenHash);
+    const conversation = await getOrCreateConversationByHash(tokenHash);
 
     const body = await req.json().catch(() => null);
     if (!body) {
       return NextResponse.json({ error: "Invalid profile payload." }, { status: 400 });
+    }
+
+    // Support explicit visitor logout
+    if (body.action === "logout") {
+      if (conversation.visitorEmail) {
+        await revokeVisitorSession(conversation.visitorEmail, token);
+      }
+      await updateConversationProfile(tokenHash, {
+        visitorEmail: null,
+        emailNotificationsEnabled: false,
+      });
+
+      const res = NextResponse.json({ success: true, loggedOut: true });
+      res.cookies.set({
+        name: VISITOR_COOKIE_NAME,
+        value: "",
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 0,
+        path: "/",
+        expires: new Date(0),
+      });
+      return res;
     }
 
     const { name, email, emailNotificationsEnabled } = body;

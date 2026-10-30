@@ -5,7 +5,14 @@ import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import {
   generateSecureToken,
   hashToken,
+  VISITOR_COOKIE_NAME,
+  ADMIN_COOKIE_NAME,
+  createAdminSessionToken,
 } from "../src/lib/live-chat/security.ts";
+
+import { POST as uploadAttachmentPost } from "../src/app/api/live-chat/attachments/route.ts";
+import { GET as getAttachmentStream } from "../src/app/api/live-chat/attachments/[id]/route.ts";
+import { NextRequest } from "next/server";
 
 import {
   getOrCreateConversationByHash,
@@ -71,8 +78,8 @@ test("Advanced Live Chat: Editing, Deletion, Reactions, Attachments, and PDF Exp
     const badDelete = await deleteMessage(msg.id, "visitor", convB.id);
     assert.equal(badDelete, false, "Visitor B must not delete Visitor A's message");
 
-    // Authorized delete
-    const successDelete = await deleteMessage(msg.id, "visitor", convA.id);
+    // Authorized delete by owner
+    const successDelete = await deleteMessage(msg.id, "owner", convA.id);
     assert.equal(successDelete, true);
 
     // Check message in list
@@ -188,7 +195,7 @@ test("Advanced Live Chat: Editing, Deletion, Reactions, Attachments, and PDF Exp
 
   // 7. Full Conversation PDF Export Verification
   await t.test("7. Generates valid A4 PDF document with conversation history", async () => {
-    const convPdf = await getOrCreateConversationByHash(hashToken("pdf-test-token-123456789012345678901234567890"));
+    const convPdf = await getOrCreateConversationByHash(hashToken(generateSecureToken()));
     await addMessage({
       conversationId: convPdf.id,
       senderType: "visitor",
@@ -291,5 +298,120 @@ test("Advanced Live Chat: Editing, Deletion, Reactions, Attachments, and PDF Exp
     const listAfterUnpin = await getAllConversationsForAdmin({ status: "all" });
     const unpinnedY = listAfterUnpin.find((c) => c.id === convY.id);
     assert.equal(unpinnedY?.isPinned, false, "Conversation Y must now be unpinned");
+  });
+
+  // 9. Both Admin and Visitor Attachment Upload API & Privacy Verification
+  await t.test("9. Both admin and normal visitors can upload supported attachments via API with strict privacy checks", async () => {
+    const vToken = generateSecureToken();
+    const vHash = hashToken(vToken);
+    const visitorConv = await getOrCreateConversationByHash(vHash, "Visitor Att Test");
+
+    const pngBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13]);
+    const fileBlob = new Blob([pngBytes], { type: "image/png" });
+
+    // A. Normal visitor upload (without admin cookie)
+    const visitorForm = new FormData();
+    visitorForm.append("file", fileBlob, "visitor-design.png");
+    visitorForm.append("conversationId", visitorConv.id);
+
+    const visitorReq = new NextRequest("http://localhost:3000/api/live-chat/attachments", {
+      method: "POST",
+      headers: {
+        cookie: `${VISITOR_COOKIE_NAME}=${vToken}`,
+      },
+      body: visitorForm,
+    });
+
+    const visitorRes = await uploadAttachmentPost(visitorReq);
+    assert.equal(visitorRes.status, 200, "Visitor upload must succeed with 200");
+    const visitorJson = await visitorRes.json();
+    assert.ok(visitorJson.success);
+    assert.ok(visitorJson.attachment?.id);
+    assert.equal(visitorJson.attachment.conversationId, visitorConv.id);
+    const attId = visitorJson.attachment.id;
+
+    // B. Visitor with admin session cookie (admin testing visitor chat)
+    const adminToken = createAdminSessionToken();
+    const adminTestingVisitorForm = new FormData();
+    adminTestingVisitorForm.append("file", fileBlob, "admin-testing-visitor.png");
+
+    const adminTestingVisitorReq = new NextRequest("http://localhost:3000/api/live-chat/attachments", {
+      method: "POST",
+      headers: {
+        cookie: `${ADMIN_COOKIE_NAME}=${adminToken}; ${VISITOR_COOKIE_NAME}=${vToken}`,
+      },
+      body: adminTestingVisitorForm,
+    });
+
+    const adminTestingVisitorRes = await uploadAttachmentPost(adminTestingVisitorReq);
+    assert.equal(adminTestingVisitorRes.status, 200, "Admin in visitor chat must succeed with 200");
+    const adminTestingVisitorJson = await adminTestingVisitorRes.json();
+    assert.equal(adminTestingVisitorJson.attachment.conversationId, visitorConv.id);
+
+    // C. Admin in Admin Inbox (with explicit target conversationId)
+    const adminInboxForm = new FormData();
+    adminInboxForm.append("file", fileBlob, "admin-inbox-chart.png");
+    adminInboxForm.append("conversationId", visitorConv.id);
+
+    const adminInboxReq = new NextRequest("http://localhost:3000/api/live-chat/attachments", {
+      method: "POST",
+      headers: {
+        cookie: `${ADMIN_COOKIE_NAME}=${adminToken}`,
+      },
+      body: adminInboxForm,
+    });
+
+    const adminInboxRes = await uploadAttachmentPost(adminInboxReq);
+    assert.equal(adminInboxRes.status, 200, "Admin inbox upload must succeed with 200");
+
+    // D. Stranger cross-conversation upload attempt -> 403 Forbidden
+    const strangerToken = generateSecureToken();
+    const strangerForm = new FormData();
+    strangerForm.append("file", fileBlob, "tamper.png");
+    strangerForm.append("conversationId", visitorConv.id); // attempts to upload to visitorConv
+
+    const strangerReq = new NextRequest("http://localhost:3000/api/live-chat/attachments", {
+      method: "POST",
+      headers: {
+        cookie: `${VISITOR_COOKIE_NAME}=${strangerToken}`,
+      },
+      body: strangerForm,
+    });
+
+    const strangerRes = await uploadAttachmentPost(strangerReq);
+    assert.equal(strangerRes.status, 403, "Stranger upload to another conversation must be blocked with 403");
+
+    // E. Visitor can stream own attachment -> 200
+    const streamReq = new NextRequest(`http://localhost:3000/api/live-chat/attachments/${attId}`, {
+      headers: {
+        cookie: `${VISITOR_COOKIE_NAME}=${vToken}`,
+      },
+    });
+    const streamRes = await getAttachmentStream(streamReq, {
+      params: Promise.resolve({ id: attId }),
+    });
+    assert.equal(streamRes.status, 200, "Visitor must be authorized to stream own attachment");
+
+    // F. Stranger cannot stream visitor's attachment -> 403
+    const strangerStreamReq = new NextRequest(`http://localhost:3000/api/live-chat/attachments/${attId}`, {
+      headers: {
+        cookie: `${VISITOR_COOKIE_NAME}=${strangerToken}`,
+      },
+    });
+    const strangerStreamRes = await getAttachmentStream(strangerStreamReq, {
+      params: Promise.resolve({ id: attId }),
+    });
+    assert.equal(strangerStreamRes.status, 403, "Stranger must be forbidden from streaming attachment");
+
+    // G. Admin can stream any attachment -> 200
+    const adminStreamReq = new NextRequest(`http://localhost:3000/api/live-chat/attachments/${attId}`, {
+      headers: {
+        cookie: `${ADMIN_COOKIE_NAME}=${adminToken}`,
+      },
+    });
+    const adminStreamRes = await getAttachmentStream(adminStreamReq, {
+      params: Promise.resolve({ id: attId }),
+    });
+    assert.equal(adminStreamRes.status, 200, "Admin must be authorized to stream conversation attachment");
   });
 });

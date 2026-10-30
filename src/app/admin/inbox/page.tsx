@@ -33,9 +33,16 @@ import {
   MoreVertical,
   Pin,
   PinOff,
+  Info,
+  Globe,
+  Laptop,
+  Smartphone,
+  Tablet,
+  MapPin,
 } from "lucide-react";
 import TelegramEmojiPicker from "@/components/LiveChat/TelegramEmojiPicker";
 import AttachmentViewerModal, { type ViewerAttachment } from "@/components/LiveChat/AttachmentViewerModal";
+import type { VisitorMetadata } from "@/lib/metadata";
 
 interface AttachmentItem {
   id: string;
@@ -64,6 +71,7 @@ interface MessageItem {
   editedAt?: string | null;
   isDeleted?: boolean;
   deletedAt?: string | null;
+  deletedBy?: "visitor" | "owner" | null;
   replyToId?: string | null;
   replyPreview?: ReplyPreviewItem | null;
   reactions?: Record<string, ("visitor" | "owner")[]>;
@@ -82,6 +90,7 @@ interface ConversationItem {
   latestMessage?: string;
   isArchived?: boolean;
   isPinned?: boolean;
+  metadata?: VisitorMetadata | null;
 }
 
 const QUICK_REACTIONS = ["👍", "❤️", "🔥", "🎉", "😂", "😮", "😢", "🙏"];
@@ -176,6 +185,9 @@ export default function AdminInboxPage({
         const data = await res.json();
         if (active) {
           setIsAuthenticated(Boolean(data.authenticated));
+          if (!data.authenticated && (data.code === "SESSION_SUPERSEDED" || data.error?.includes("another device"))) {
+            setLoginError("Your account was signed in on another device. Please log in again.");
+          }
           if (data.authenticated) {
             const targetId = getConversationIdFromUrl(initialConversationId);
             if (targetId) {
@@ -314,7 +326,11 @@ export default function AdminInboxPage({
         }
         setApiError("");
       } else if (res.status === 401) {
+        const errJson = await res.json().catch(() => ({}));
         setIsAuthenticated(false);
+        if (errJson.code === "SESSION_SUPERSEDED" || errJson.error?.includes("another device")) {
+          setLoginError("Your account was signed in on another device. Please log in again.");
+        }
       } else {
         const errJson = await res.json().catch(() => ({}));
         setApiError(errJson.error || "Failed to load conversations.");
@@ -356,7 +372,11 @@ export default function AdminInboxPage({
             }
           }
         } else if (active && res.status === 401) {
+          const errJson = await res.json().catch(() => ({}));
           setIsAuthenticated(false);
+          if (errJson.code === "SESSION_SUPERSEDED" || errJson.error?.includes("another device")) {
+            setLoginError("Your account was signed in on another device. Please log in again.");
+          }
         }
       } catch {}
 
@@ -1475,52 +1495,75 @@ export default function AdminInboxPage({
                           )}
 
                           {/* Bubble */}
-                          <div
-                            className={`p-3 rounded-2xl text-xs sm:text-[13px] max-w-[85%] md:max-w-[75%] break-words leading-relaxed shadow-sm ${
-                              isOwner
-                                ? "bg-purple-700/85 text-white rounded-br-xs"
-                                : "bg-[#182533] text-gray-100 rounded-bl-xs border border-white/5"
-                            } ${m.isDeleted ? "italic opacity-60 bg-white/5 text-gray-400" : ""}`}
-                          >
-                            {isEditing ? (
-                              <div className="space-y-2 min-w-[220px]">
-                                <textarea
-                                  value={editText}
-                                  onChange={(e) => setEditText(e.target.value)}
-                                  className="w-full bg-[#0e1621] border border-cyan-400 rounded-lg p-2 text-white text-xs outline-none"
-                                  rows={2}
-                                  autoFocus
-                                />
-                                <div className="flex justify-end gap-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => setEditingMessageId(null)}
-                                    className="text-[10px] px-2.5 py-1 rounded bg-white/10 text-gray-300 hover:text-white cursor-pointer"
-                                  >
-                                    Cancel
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSaveEdit(m.id)}
-                                    className="text-[10px] px-3 py-1 rounded bg-cyan-400 text-black font-bold hover:bg-cyan-300 cursor-pointer"
-                                  >
-                                    Save
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div>
-                                <span>{m.content}</span>
-                                {m.isEdited && !m.isDeleted && (
-                                  <span className="text-[10px] text-gray-300/80 font-mono ml-1.5 opacity-80">
-                                    (edited)
-                                  </span>
-                                )}
-                              </div>
-                            )}
+                          {(() => {
+                            const isDeletedByVisitor = Boolean(m.isDeleted && (m.deletedBy === "visitor" || (!m.deletedBy && m.senderType === "visitor")));
+                            const isDeletedByOwner = Boolean(m.isDeleted && m.deletedBy === "owner");
 
-                            {/* Attachments Display */}
-                            {m.attachments && m.attachments.length > 0 && !m.isDeleted && (
+                            return (
+                              <div
+                                className={`p-3 rounded-2xl text-xs sm:text-[13px] max-w-[85%] md:max-w-[75%] break-words leading-relaxed shadow-sm ${
+                                  isOwner
+                                    ? isDeletedByOwner
+                                      ? "italic opacity-60 bg-white/5 text-gray-400 rounded-br-xs"
+                                      : "bg-purple-700/85 text-white rounded-br-xs"
+                                    : isDeletedByVisitor
+                                    ? "bg-red-950/25 text-gray-100 rounded-bl-xs border border-red-500/40 shadow-xs shadow-red-950/30"
+                                    : m.isDeleted
+                                    ? "italic opacity-60 bg-white/5 text-gray-400 rounded-bl-xs"
+                                    : "bg-[#182533] text-gray-100 rounded-bl-xs border border-white/5"
+                                }`}
+                              >
+                                {isDeletedByVisitor && (
+                                  <div className="flex items-center gap-1.5 px-2 py-0.5 mb-2 rounded bg-red-500/20 border border-red-500/30 text-red-300 text-[10px] font-semibold tracking-wide w-fit select-none">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                                    <span>Deleted by visitor</span>
+                                    {m.deletedAt && (
+                                      <span className="text-[9px] text-red-400/80 font-mono ml-1">
+                                        {new Date(m.deletedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+
+                                {isEditing ? (
+                                  <div className="space-y-2 min-w-[220px]">
+                                    <textarea
+                                      value={editText}
+                                      onChange={(e) => setEditText(e.target.value)}
+                                      className="w-full bg-[#0e1621] border border-cyan-400 rounded-lg p-2 text-white text-xs outline-none"
+                                      rows={2}
+                                      autoFocus
+                                    />
+                                    <div className="flex justify-end gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingMessageId(null)}
+                                        className="text-[10px] px-2.5 py-1 rounded bg-white/10 text-gray-300 hover:text-white cursor-pointer"
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSaveEdit(m.id)}
+                                        className="text-[10px] px-3 py-1 rounded bg-cyan-400 text-black font-bold hover:bg-cyan-300 cursor-pointer"
+                                      >
+                                        Save
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <span>{m.content}</span>
+                                    {m.isEdited && !m.isDeleted && (
+                                      <span className="text-[10px] text-gray-300/80 font-mono ml-1.5 opacity-80">
+                                        (edited)
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* Attachments Display */}
+                                {m.attachments && m.attachments.length > 0 && (!m.isDeleted || isDeletedByVisitor) && (
                               <div className="mt-2.5 pt-2 border-t border-white/10 space-y-1.5">
                                 {/* If multiple attachments, show Download All */}
                                 {m.attachments.length > 1 && (
@@ -1679,6 +1722,8 @@ export default function AdminInboxPage({
                               )}
                             </div>
                           </div>
+                        );
+                      })()}
 
                           {/* Multi-Emoji Reaction Pills Row */}
                           {m.reactions && Object.keys(m.reactions).length > 0 && (
@@ -2041,6 +2086,103 @@ export default function AdminInboxPage({
                 <span className="text-[10px] text-gray-400 font-mono block">Last Activity</span>
                 <span className="font-mono text-[11px] text-gray-300">
                   {new Date(activeConv.lastMessageAt).toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            {/* Live Chat Telemetry & Device Metadata (Admin Only) */}
+            <div className="pt-3 border-t border-white/10 space-y-3 text-xs">
+              <div className="flex items-center gap-1.5 text-cyan-400 font-mono text-[10px] uppercase font-bold tracking-wider">
+                <Globe className="w-3.5 h-3.5" />
+                <span>Visitor Telemetry</span>
+              </div>
+
+              {/* Browser */}
+              <div>
+                <span className="text-[10px] text-gray-400 font-mono block">Browser & Engine</span>
+                <span className="font-mono text-[11px] text-gray-200">
+                  {activeConv.metadata?.browserFamily ? (
+                    <>
+                      {activeConv.metadata.browserFamily}
+                      {activeConv.metadata.browserVersion ? ` ${activeConv.metadata.browserVersion}` : ""}
+                      {activeConv.metadata.browserEngine ? ` (${activeConv.metadata.browserEngine})` : ""}
+                    </>
+                  ) : (
+                    <span className="text-gray-500 italic">Unavailable (Not detected)</span>
+                  )}
+                </span>
+              </div>
+
+              {/* Device Category & OS */}
+              <div>
+                <span className="text-[10px] text-gray-400 font-mono block">Device & Operating System</span>
+                <div className="flex items-center gap-1.5 font-mono text-[11px] text-gray-200 mt-0.5">
+                  {activeConv.metadata?.deviceType === "mobile" ? (
+                    <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
+                  ) : activeConv.metadata?.deviceType === "tablet" ? (
+                    <Tablet className="w-3.5 h-3.5 text-cyan-400" />
+                  ) : (
+                    <Laptop className="w-3.5 h-3.5 text-cyan-400" />
+                  )}
+                  <span className="capitalize">{activeConv.metadata?.deviceType || "Desktop"}</span>
+                  <span className="text-gray-500">•</span>
+                  <span>
+                    {activeConv.metadata?.osFamily || "OS Unavailable"}
+                    {activeConv.metadata?.osVersion ? ` ${activeConv.metadata.osVersion}` : ""}
+                  </span>
+                </div>
+              </div>
+
+              {/* Screen & Viewport */}
+              <div>
+                <span className="text-[10px] text-gray-400 font-mono block">Screen & Viewport</span>
+                <span className="font-mono text-[11px] text-gray-300">
+                  {activeConv.metadata?.screenResolution ? (
+                    <>
+                      {activeConv.metadata.screenResolution} Screen
+                      {activeConv.metadata.viewportDimensions ? ` (${activeConv.metadata.viewportDimensions} viewport)` : ""}
+                    </>
+                  ) : activeConv.metadata?.viewportDimensions ? (
+                    `${activeConv.metadata.viewportDimensions} viewport`
+                  ) : (
+                    <span className="text-gray-500 italic">Unavailable (Client omitted)</span>
+                  )}
+                </span>
+              </div>
+
+              {/* Approximate Location */}
+              <div>
+                <span className="text-[10px] text-gray-400 font-mono block">Approximate Location</span>
+                <div className="flex items-start gap-1.5 font-mono text-[11px] text-gray-300 mt-0.5">
+                  <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                  <span>
+                    {activeConv.metadata?.city || activeConv.metadata?.country ? (
+                      <>
+                        {[activeConv.metadata.city, activeConv.metadata.region, activeConv.metadata.country].filter(Boolean).join(", ")}
+                        <span className="text-[10px] text-gray-500 block">IP-derived, approximate</span>
+                      </>
+                    ) : (
+                      <span className="text-gray-500 italic">
+                        {activeConv.metadata?.locationUnavailableReason || "Unavailable (No edge IP-geolocation headers)"}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              {/* Client IP */}
+              <div>
+                <span className="text-[10px] text-gray-400 font-mono block">Client IP Address</span>
+                <span className="font-mono text-[11px] text-amber-300/90 select-all">
+                  {activeConv.metadata?.ip || "Unavailable"}
+                </span>
+              </div>
+
+              {/* Timezone & Language */}
+              <div>
+                <span className="text-[10px] text-gray-400 font-mono block">Timezone & Language</span>
+                <span className="font-mono text-[11px] text-gray-300">
+                  {activeConv.metadata?.timezone || "Timezone Unavailable"} • {activeConv.metadata?.deviceLanguage || "en"}
                 </span>
               </div>
             </div>

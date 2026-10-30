@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   ADMIN_COOKIE_NAME,
-  verifyAdminSessionToken,
   sanitizeText,
 } from "@/lib/live-chat/security";
+import { validateAdminSession, createSessionRejectedResponse } from "@/lib/live-chat/session-registry";
 import {
   getConversationById,
   addMessage,
@@ -15,9 +15,9 @@ import type { ChatAttachment } from "@/lib/live-chat/types";
 
 export async function POST(req: NextRequest) {
   try {
-    const token = req.cookies.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(token)) {
-      return NextResponse.json({ error: "Unauthorized access." }, { status: 401 });
+    const auth = await validateAdminSession(req);
+    if (!auth.authenticated) {
+      return createSessionRejectedResponse(auth, ADMIN_COOKIE_NAME);
     }
 
     const body = await req.json().catch(() => null);

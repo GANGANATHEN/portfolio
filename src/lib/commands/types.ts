@@ -1,11 +1,27 @@
-export interface CommandMetadata {
+import type { VisitorMetadata } from "../metadata";
+
+export type CommandMetadata = Partial<VisitorMetadata> & {
   ip?: string;
   userAgent?: string;
   deviceType?: "desktop" | "tablet" | "mobile";
   osFamily?: string;
+  osVersion?: string;
   browserFamily?: string;
+  browserVersion?: string;
+  browserEngine?: string;
+  screenResolution?: string;
+  viewportDimensions?: string;
+  deviceLanguage?: string;
+  timezone?: string;
+  country?: string;
+  region?: string;
+  city?: string;
+  approxLatitude?: number | null;
+  approxLongitude?: number | null;
+  locationSource?: "ip_derived_approximate" | "unavailable";
+  locationUnavailableReason?: string;
   submittedAt?: string;
-}
+};
 
 export interface CommandRecord {
   id: string;
@@ -41,4 +57,3 @@ export interface CommandStats {
   hidden: number;
   deleted: number;
 }
-

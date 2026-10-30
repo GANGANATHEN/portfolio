@@ -25,6 +25,8 @@ import {
   Square,
   FileArchive,
   FileSpreadsheet,
+  Clock,
+  Info,
 } from "lucide-react";
 import LIVE_CHAT_ICON from "../../../public/assets/bot/Livechatbot.svg";
 import TelegramEmojiPicker from "./TelegramEmojiPicker";
@@ -122,10 +124,12 @@ export default function LiveChatWidget({
   const [isSending, setIsSending] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOnline, setIsOnline] = useState(true);
+  const [conversationId, setConversationId] = useState<string | null>(null);
 
   // Connection & Error Backoff State
   const [connectionStatus, setConnectionStatus] = useState<"connected" | "reconnecting" | "error">("connected");
   const [connectionErrorMsg, setConnectionErrorMsg] = useState("");
+  const [sessionSupersededMsg, setSessionSupersededMsg] = useState("");
   const backoffDelayRef = useRef(3500);
   const isPollingInFlightRef = useRef(false);
 
@@ -147,6 +151,7 @@ export default function LiveChatWidget({
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileError, setProfileError] = useState("");
   const [profileSuccess, setProfileSuccess] = useState(false);
+  const [dismissedRetentionNotice, setDismissedRetentionNotice] = useState(false);
 
   // OTP Verification State
   const [otpCode, setOtpCode] = useState("");
@@ -318,7 +323,9 @@ export default function LiveChatWidget({
 
     try {
       const q = markRead ? "mark_read=true" : "mark_read=false";
-      const res = await fetch(`/api/live-chat/messages?${q}`);
+      const res = await fetch(`/api/live-chat/messages?${q}`, {
+        credentials: "include",
+      });
 
       if (res.ok) {
         const data = await res.json();
@@ -336,6 +343,13 @@ export default function LiveChatWidget({
         setConnectionStatus("connected");
         setConnectionErrorMsg("");
         backoffDelayRef.current = 3500; // Reset normal polling interval
+      } else if (res.status === 401) {
+        const errJson = await res.json().catch(() => ({}));
+        if (errJson.code === "SESSION_SUPERSEDED" || (errJson.error && errJson.error.includes("another device"))) {
+          setSessionSupersededMsg("Your account was signed in on another device. Please log in again.");
+          setProfile((prev) => ({ ...prev, emailVerified: false, visitorEmail: "" }));
+          setMessages([]);
+        }
       } else if (res.status === 503 || res.status === 500) {
         const errJson = await res.json().catch(() => ({}));
         setConnectionStatus("reconnecting");
@@ -358,9 +372,14 @@ export default function LiveChatWidget({
     const loadSessionAndMessages = async () => {
       try {
         const urlParams = new URLSearchParams(window.location.search);
-        const res = await fetch("/api/live-chat/session");
+        const res = await fetch("/api/live-chat/session", {
+          credentials: "include",
+        });
         if (active && res.ok) {
           const data = await res.json();
+          if (data.conversationId) {
+            setConversationId(data.conversationId);
+          }
           const loadedProfile: ProfileState = {
             visitorName: data.visitorName || "Visitor",
             visitorEmail: data.visitorEmail || "",
@@ -375,10 +394,17 @@ export default function LiveChatWidget({
             emailNotificationsEnabled: Boolean(data.emailNotificationsEnabled),
           });
           setUnreadCount(data.unreadVisitorCount || 0);
-
-          if (urlParams.get("live_chat") === "open") {
-            handleOpen();
+        } else if (active && res.status === 401) {
+          const errJson = await res.json().catch(() => ({}));
+          if (errJson.code === "SESSION_SUPERSEDED" || (errJson.error && errJson.error.includes("another device"))) {
+            setSessionSupersededMsg("Your account was signed in on another device. Please log in again.");
+            setProfile((prev) => ({ ...prev, emailVerified: false, visitorEmail: "" }));
+            setMessages([]);
           }
+        }
+
+        if (urlParams.get("live_chat") === "open") {
+          handleOpen();
         }
       } catch (e) {
         console.warn("[Live Chat] Session init failed:", e);
@@ -449,11 +475,22 @@ export default function LiveChatWidget({
       attachments: hasAttachments ? [...pendingAttachments] : undefined,
     };
 
+    const clientMeta =
+      typeof window !== "undefined"
+        ? {
+            screenResolution: `${window.screen?.width || 0}x${window.screen?.height || 0}`,
+            viewportDimensions: `${window.innerWidth}x${window.innerHeight}`,
+            deviceLanguage: navigator.language || "en",
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          }
+        : undefined;
+
     const payload = {
       content: text,
       replyToId: replyingTo ? replyingTo.id : undefined,
       attachmentIds: pendingAttachments.map((a) => a.id),
       clientMessageId: tempId,
+      clientMeta,
     };
 
     setMessages((prev) => [...prev, optimisticMessage]);
@@ -465,12 +502,16 @@ export default function LiveChatWidget({
     try {
       const res = await fetch("/api/live-chat/send", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
       if (res.ok) {
         const data = await res.json();
+        if (data.message?.conversationId && !conversationId) {
+          setConversationId(data.message.conversationId);
+        }
         setMessages((prev) =>
           prev.map((m) =>
             m.id === tempId
@@ -515,14 +556,21 @@ export default function LiveChatWidget({
     try {
       const formData = new FormData();
       formData.append("file", file);
+      if (conversationId) {
+        formData.append("conversationId", conversationId);
+      }
 
       const res = await fetch("/api/live-chat/attachments", {
         method: "POST",
+        credentials: "include",
         body: formData,
       });
 
       const data = await res.json();
       if (res.ok && data.attachment) {
+        if (data.attachment.conversationId && !conversationId) {
+          setConversationId(data.attachment.conversationId);
+        }
         setPendingAttachments((prev) => [...prev, data.attachment]);
       } else {
         setUploadError(data.error || "Failed to upload attachment.");
@@ -617,23 +665,15 @@ export default function LiveChatWidget({
     try {
       const res = await fetch("/api/live-chat/messages", {
         method: "DELETE",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messageId }),
       });
 
       if (res.ok) {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === messageId
-              ? {
-                  ...m,
-                  isDeleted: true,
-                  content: "[Message deleted]",
-                  attachments: undefined,
-                }
-              : m,
-          ),
-        );
+        // Visitor deletion: message disappears immediately from visitor's view
+        // while original content and timestamps remain safely visible to admin
+        setMessages((prev) => prev.filter((m) => m.id !== messageId));
         setDeletingMsgId(null);
       }
     } catch (e) {
@@ -972,6 +1012,26 @@ export default function LiveChatWidget({
             </div>
           )}
 
+          {/* 24-Hour Message Retention Notice Banner */}
+          {!dismissedRetentionNotice && (
+            <div className="bg-[#131b26] border-b border-cyan-500/25 px-3 py-1.5 text-gray-300 text-[11px] flex items-start justify-between gap-2 shadow-xs shrink-0">
+              <div className="flex items-start gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5" />
+                <span className="leading-snug text-gray-300">
+                  Messages are automatically and permanently deleted 24 hours after they are read by the recipient. Deleted messages cannot be recovered or viewed again.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDismissedRetentionNotice(true)}
+                title="Dismiss retention notice"
+                className="text-gray-400 hover:text-white p-0.5 shrink-0 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
           {/* Profile / OTP Settings Modal */}
           {showProfileModal && (
             <div className="absolute inset-0 z-40 bg-black/85 backdrop-blur-xs p-4 flex flex-col justify-center items-center overflow-y-auto">
@@ -1103,6 +1163,26 @@ export default function LiveChatWidget({
                   {profileError && <p className="text-red-400 text-[11px] pt-1">{profileError}</p>}
                   {profileSuccess && <p className="text-emerald-400 text-[11px] pt-1">Settings saved!</p>}
 
+                  {/* 24-Hour Retention Policy in Settings */}
+                  <div className="bg-[#0e1621] border border-cyan-500/20 rounded-xl p-3 space-y-1">
+                    <div className="flex items-center gap-1.5 text-cyan-300 font-bold text-[11px]">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>24-Hour Message Retention Policy</span>
+                    </div>
+                    <p className="text-[10px] text-gray-400 leading-relaxed">
+                      Messages are automatically and permanently deleted 24 hours after they are read by the recipient. Deleted messages cannot be recovered or viewed again.
+                    </p>
+                    {dismissedRetentionNotice && (
+                      <button
+                        type="button"
+                        onClick={() => setDismissedRetentionNotice(false)}
+                        className="text-[10px] text-cyan-400 hover:text-cyan-300 underline font-mono cursor-pointer pt-0.5 block"
+                      >
+                        Restore retention banner in chat
+                      </button>
+                    )}
+                  </div>
+
                   <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
                     <button
                       type="button"
@@ -1158,6 +1238,25 @@ export default function LiveChatWidget({
             data-lenis-prevent
             className="custom-scrollbar flex-1 overflow-y-auto px-3 py-4 space-y-2.5 bg-[#0e1621]"
           >
+            {sessionSupersededMsg && (
+              <div className="bg-red-950/90 border border-red-500/50 text-red-200 text-xs p-3 rounded-xl flex items-center justify-between gap-2 shadow-lg mb-3">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                  <span>{sessionSupersededMsg}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSessionSupersededMsg("");
+                    setShowProfileModal(true);
+                  }}
+                  className="bg-red-600 hover:bg-red-500 text-white font-bold px-2.5 py-1 rounded-lg text-xs cursor-pointer shrink-0 transition-colors"
+                >
+                  Log in
+                </button>
+              </div>
+            )}
+
             {messages.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-6 text-gray-400 space-y-2 select-none">
                 <div className="w-14 h-14 rounded-full bg-cyan-500/10 flex items-center justify-center text-cyan-400 mb-1">

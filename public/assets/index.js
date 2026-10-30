@@ -20,6 +20,7 @@ import redux from "./tech/redux.png";
 import tailwind from "./tech/tailwind.png";
 import typescript from "./tech/typescript.png";
 import threejs from "./tech/threejs.png";
+import cpp from "./tech/cpp.png"
 
 import redhat from "./company/redhat.png";
 import ibm from "./company/ibm.png";
@@ -28,6 +29,7 @@ import cisco from "./company/CISCO.png";
 import uomcodl from "./company/UOMcodl.png";
 import devtown from "./company/devtown.png";
 import eminent from "./company/eminent.jpeg";
+import imuii from "./company/imuii.jpeg"
 
 import appleimg from "./prjectimg/Appleweb.png";
 import calci from "./prjectimg/calci.png";
@@ -61,12 +63,14 @@ export {
   tailwind,
   typescript,
   threejs,
+  cpp,
   redhat,
   ibm,
   aws,
   cisco,
   devtown,
   eminent,
+  imuii,
   uomcodl,
   calci,
   ganganathan,

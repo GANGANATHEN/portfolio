@@ -9,9 +9,15 @@ import {
   getOrCreateConversationByHash,
   addMessage,
   getAttachmentById,
+  updateConversationMetadata,
 } from "@/lib/live-chat/db";
 import { notifyOwnerOfNewMessage } from "@/lib/live-chat/email";
 import type { ChatAttachment } from "@/lib/live-chat/types";
+import { extractVisitorMetadata } from "@/lib/metadata";
+import {
+  validateVisitorSession,
+  createSessionRejectedResponse,
+} from "@/lib/live-chat/session-registry";
 
 // In-memory rate limiter for live chat messaging
 const visitorRateLimits = new Map<string, { count: number; resetAt: number }>();
@@ -37,6 +43,14 @@ export async function POST(req: NextRequest) {
   try {
     let token = req.cookies.get(VISITOR_COOKIE_NAME)?.value;
     let isNewSession = false;
+
+    // Check single active session validity if session exists
+    if (token && token.length >= 32) {
+      const auth = await validateVisitorSession(req);
+      if (!auth.valid && auth.clearCookie) {
+        return createSessionRejectedResponse(auth, VISITOR_COOKIE_NAME);
+      }
+    }
 
     if (!token || token.length < 32) {
       token = generateSecureToken();
@@ -72,6 +86,15 @@ export async function POST(req: NextRequest) {
     }
 
     const conversation = await getOrCreateConversationByHash(tokenHash);
+
+    // Update conversation metadata with genuine non-invasive telemetry
+    const clientMeta = body.clientMeta || undefined;
+    const metadata = extractVisitorMetadata(req, clientMeta, conversation.metadata?.firstVisitAt);
+    try {
+      await updateConversationMetadata(conversation.id, metadata);
+    } catch (metaErr) {
+      console.warn("[Live Chat] Metadata update warning:", metaErr);
+    }
 
     // Validate and link attachments
     const attachments: ChatAttachment[] = [];

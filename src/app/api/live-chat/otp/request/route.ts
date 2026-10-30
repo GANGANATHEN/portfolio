@@ -12,6 +12,10 @@ import {
   getLatestEmailOtp,
 } from "@/lib/live-chat/db";
 import { sendOtpVerificationEmail } from "@/lib/live-chat/email";
+import {
+  validateVisitorSession,
+  createSessionRejectedResponse,
+} from "@/lib/live-chat/session-registry";
 
 // In-memory sliding-window tracker for OTP abuse prevention
 interface OtpThrottleEntry {
@@ -33,6 +37,11 @@ export async function POST(req: NextRequest) {
         { error: "Active chat session required. Please refresh." },
         { status: 401 },
       );
+    }
+
+    const auth = await validateVisitorSession(req);
+    if (!auth.valid && auth.clearCookie) {
+      return createSessionRejectedResponse(auth, VISITOR_COOKIE_NAME);
     }
 
     const tokenHash = hashToken(token);

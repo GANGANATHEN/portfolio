@@ -5,9 +5,9 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 
 gsap.registerPlugin(ScrollTrigger);
 
-interface Point {
-  x: number;
-  y: number;
+interface NormPoint {
+  x: number; // -1 to 1
+  y: number; // -1 to 1
 }
 
 interface Particle {
@@ -31,7 +31,6 @@ export default function MultiShapeMorph({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const particles = useRef<Particle[]>([]);
-  const numParticles = 800; // Balanced for silky 60fps across mobile and desktop
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -47,27 +46,27 @@ export default function MultiShapeMorph({
     let animationFrameId: number;
     let tl: gsap.core.Timeline | null = null;
 
-    const resize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    };
-    window.addEventListener("resize", resize);
-    resize();
+    const isMobile = window.innerWidth <= 640;
+    const numParticles = isMobile ? 400 : 750;
 
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
+    // SVG shape definition paths
+    const paths = [
+      "M250,50 L350,100 L350,200 L250,250 L150,200 L150,100 Z", // Hexagon
+      "M250,50 L400,300 L100,300 Z",                             // Triangle
+      "M250,50 L400,150 L250,250 L100,150 Z",                     // Diamond
+    ];
 
-    // SVG Point Generator Logic with safe fallback
-    const getPathPoints = (pathData: string): Point[] => {
+    // Normalized point sampler for arbitrary SVG path: maps points to [-1, 1] bounds
+    const getNormalizedPoints = (pathData: string): NormPoint[] => {
       const offscreen = document.createElement("canvas");
-      offscreen.width = 1000;
-      offscreen.height = 1000;
+      offscreen.width = 600;
+      offscreen.height = 600;
       const oCtx = offscreen.getContext("2d");
 
       if (!oCtx) {
         return Array.from({ length: numParticles }, () => ({
-          x: centerX + (Math.random() - 0.5) * 400,
-          y: centerY + (Math.random() - 0.5) * 400,
+          x: (Math.random() - 0.5) * 1.6,
+          y: (Math.random() - 0.5) * 1.6,
         }));
       }
 
@@ -85,54 +84,86 @@ export default function MultiShapeMorph({
         const bbox = path.getBBox();
         document.body.removeChild(svg);
 
-        const scale = 500 / Math.max(bbox.width || 500, bbox.height || 500);
+        const width = bbox.width || 300;
+        const height = bbox.height || 300;
+        const maxDim = Math.max(width, height);
+        const scale = 400 / maxDim;
+
         oCtx.fillStyle = "white";
-        oCtx.translate(250, 350);
+        oCtx.translate(300, 300);
         oCtx.scale(scale, scale);
-        oCtx.translate(-(bbox.x + bbox.width / 2), -(bbox.y + bbox.height / 2));
+        oCtx.translate(-(bbox.x + width / 2), -(bbox.y + height / 2));
         oCtx.fill(new Path2D(pathData));
 
-        const imgData = oCtx.getImageData(0, 0, 1000, 1000);
-        const points: Point[] = [];
+        const imgData = oCtx.getImageData(0, 0, 600, 600);
+        const pts: NormPoint[] = [];
+
         for (let i = 0; i < imgData.data.length; i += 4) {
           if (imgData.data[i + 3] > 128) {
             const idx = i / 4;
-            points.push({
-              x: ((idx % 1000) - 500) * 0.5,
-              y: (Math.floor(idx / 1000) - 500) * 0.5,
+            const px = (idx % 600) - 300;
+            const py = Math.floor(idx / 600) - 300;
+            pts.push({
+              x: px / 200,
+              y: py / 200,
             });
           }
         }
 
-        const SCALE_MULTIPLIER = 3.8;
+        if (pts.length === 0) throw new Error("No points sampled");
+
         return Array.from({ length: numParticles }, () => {
-          const p = points[Math.floor(Math.random() * points.length)] || {
-            x: 0,
-            y: 0,
-          };
-          return {
-            x: centerX + p.x * SCALE_MULTIPLIER,
-            y: centerY + p.y * SCALE_MULTIPLIER,
-          };
+          return pts[Math.floor(Math.random() * pts.length)];
         });
       } catch {
-        // Fallback procedural points if SVG measurement fails
         return Array.from({ length: numParticles }, () => ({
-          x: centerX + (Math.random() - 0.5) * 350,
-          y: centerY + (Math.random() - 0.5) * 350,
+          x: (Math.random() - 0.5) * 1.5,
+          y: (Math.random() - 0.5) * 1.5,
         }));
       }
     };
 
+    const normalizedShapes: NormPoint[][] = paths.map(getNormalizedPoints);
+
+    // Responsive Radius calculation
+    const getRadius = (w: number, h: number): number => {
+      const minDim = Math.min(w, h);
+      if (w <= 480) {
+        // Fits safely inside 320px-480px viewports without horizontal clipping
+        return Math.min(w * 0.36, 125);
+      } else if (w <= 768) {
+        return Math.min(minDim * 0.34, 190);
+      }
+      return Math.min(minDim * 0.36, 310);
+    };
+
+    let width = window.innerWidth;
+    let height = window.innerHeight;
+    let radius = getRadius(width, height);
+    let centerX = width / 2;
+    let centerY = height / 2;
+
+    const resize = () => {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width;
+      canvas.height = height;
+      centerX = width / 2;
+      centerY = height / 2;
+      radius = getRadius(width, height);
+    };
+    window.addEventListener("resize", resize);
+    resize();
+
     class ParticleImpl implements Particle {
-      x = Math.random() * canvas!.width;
-      y = Math.random() * canvas!.height;
+      x = Math.random() * width;
+      y = Math.random() * height;
       targetX = centerX;
       targetY = centerY;
       vx = 0;
       vy = 0;
-      friction = 0.95;
-      spring = 0.08;
+      friction = 0.94;
+      spring = isMobile ? 0.09 : 0.08;
 
       update() {
         this.vx += (this.targetX - this.x) * this.spring;
@@ -144,28 +175,40 @@ export default function MultiShapeMorph({
       }
 
       draw(context: CanvasRenderingContext2D) {
-        context.fillStyle = "rgba(96, 165, 250, 0.4)";
+        context.fillStyle = "rgba(96, 165, 250, 0.45)";
         context.fillRect(this.x, this.y, 2, 2);
       }
     }
 
-    const paths = [
-      "M250,50 L350,100 L350,200 L250,250 L150,200 L150,100 Z",
-      "M250,50 L400,300 L100,300 Z",
-      "M250,50 L400,150 L250,250 L100,150 Z",
-    ];
-    const shapePoints = paths.map(getPathPoints);
-
     particles.current = [];
     for (let i = 0; i < numParticles; i++) {
       const p = new ParticleImpl();
-      p.targetX = shapePoints[0][i].x;
-      p.targetY = shapePoints[0][i].y;
+      const normPt = normalizedShapes[0][i] || { x: 0, y: 0 };
+      p.targetX = centerX + normPt.x * radius;
+      p.targetY = centerY + normPt.y * radius;
       particles.current.push(p);
     }
 
-    // High performance single numeric tween instead of thousands of individual particle tweens
     const morphProgress = { value: 0 };
+
+    const updateParticleTargets = (progressVal: number) => {
+      const fromIndex = Math.min(Math.floor(progressVal), normalizedShapes.length - 2);
+      const fraction = progressVal - fromIndex;
+      const fromPts = normalizedShapes[fromIndex];
+      const toPts = normalizedShapes[fromIndex + 1];
+
+      particles.current.forEach((p, i) => {
+        const startP = fromPts[i];
+        const endP = toPts[i];
+        if (startP && endP) {
+          const normX = startP.x + (endP.x - startP.x) * fraction;
+          const normY = startP.y + (endP.y - startP.y) * fraction;
+          p.targetX = centerX + normX * radius;
+          p.targetY = centerY + normY * radius;
+        }
+      });
+    };
+
     if (!prefersReducedMotion && wrapperRef.current) {
       tl = gsap.timeline({
         scrollTrigger: {
@@ -174,26 +217,13 @@ export default function MultiShapeMorph({
           end: "bottom bottom",
           scrub: 1,
           onUpdate: () => {
-            const raw = morphProgress.value;
-            const fromIndex = Math.min(Math.floor(raw), shapePoints.length - 2);
-            const fraction = raw - fromIndex;
-            const fromPts = shapePoints[fromIndex];
-            const toPts = shapePoints[fromIndex + 1];
-
-            particles.current.forEach((p, i) => {
-              const startP = fromPts[i];
-              const endP = toPts[i];
-              if (startP && endP) {
-                p.targetX = startP.x + (endP.x - startP.x) * fraction;
-                p.targetY = startP.y + (endP.y - startP.y) * fraction;
-              }
-            });
+            updateParticleTargets(morphProgress.value);
           },
         },
       });
 
       tl.to(morphProgress, {
-        value: shapePoints.length - 1,
+        value: normalizedShapes.length - 1,
         ease: "none",
       });
     }
@@ -220,7 +250,7 @@ export default function MultiShapeMorph({
   }, []);
 
   return (
-    <div ref={wrapperRef} className="w-full relative">
+    <div ref={wrapperRef} className="w-full relative overflow-hidden">
       <canvas
         ref={canvasRef}
         className="fixed top-0 left-0 -z-10 pointer-events-none"

@@ -4,6 +4,10 @@ import type {
   NotificationLog,
   EmailOtpRecord,
   ChatAttachment,
+  ChatArchiveBatch,
+  VisitorMetadata,
+  ActiveSessionRecord,
+  SupersededSessionRecord,
 } from "./types";
 import { getServerSupabase } from "../supabase";
 import crypto from "crypto";
@@ -11,11 +15,12 @@ import fs from "fs";
 import path from "path";
 
 // Durable local storage path for persistent offline & dev execution
-const DATA_DIR = process.env.VERCEL
+export const DATA_DIR = process.env.VERCEL
   ? path.join("/tmp", ".data")
   : path.join(/*turbopackIgnore: true*/ process.cwd(), ".data");
-const STORE_FILE = path.join(/*turbopackIgnore: true*/ DATA_DIR, "live-chat-store.json");
+export const STORE_FILE = path.join(/*turbopackIgnore: true*/ DATA_DIR, "live-chat-store.json");
 export const ATTACHMENTS_DIR = path.join(/*turbopackIgnore: true*/ DATA_DIR, "attachments");
+export const ARCHIVES_DIR = path.join(/*turbopackIgnore: true*/ DATA_DIR, "archives");
 
 interface PersistentStore {
   conversations: Record<string, Conversation>; // id -> Conversation
@@ -24,6 +29,9 @@ interface PersistentStore {
   notificationLogs: NotificationLog[];
   emailOtps: Record<string, EmailOtpRecord[]>; // conversationId -> EmailOtpRecord[]
   attachments: Record<string, ChatAttachment>; // attachmentId -> ChatAttachment
+  archiveBatches: Record<string, ChatArchiveBatch>; // batchId -> ChatArchiveBatch
+  activeSessions: Record<string, ActiveSessionRecord>; // `${accountType}:${accountId}` -> ActiveSessionRecord
+  supersededSessions: Record<string, SupersededSessionRecord>; // tokenHash -> SupersededSessionRecord
 }
 
 // In-memory cache synced with disk
@@ -34,6 +42,9 @@ let localStore: PersistentStore = {
   notificationLogs: [],
   emailOtps: {},
   attachments: {},
+  archiveBatches: {},
+  activeSessions: {},
+  supersededSessions: {},
 };
 
 // Simple in-process mutex to prevent concurrent write races in node
@@ -53,6 +64,9 @@ function initDurableStore(): void {
     if (!fs.existsSync(ATTACHMENTS_DIR)) {
       fs.mkdirSync(ATTACHMENTS_DIR, { recursive: true });
     }
+    if (!fs.existsSync(ARCHIVES_DIR)) {
+      fs.mkdirSync(ARCHIVES_DIR, { recursive: true });
+    }
     if (fs.existsSync(STORE_FILE)) {
       const content = fs.readFileSync(STORE_FILE, "utf-8");
       const parsed = JSON.parse(content);
@@ -64,6 +78,9 @@ function initDurableStore(): void {
           notificationLogs: parsed.notificationLogs || [],
           emailOtps: parsed.emailOtps || {},
           attachments: parsed.attachments || {},
+          archiveBatches: parsed.archiveBatches || {},
+          activeSessions: parsed.activeSessions || {},
+          supersededSessions: parsed.supersededSessions || {},
         };
       }
     }
@@ -171,12 +188,14 @@ function mapSupabaseConversation(data: Record<string, unknown>): Conversation {
     isDeleted: Boolean(data.is_deleted),
     isPinned: Boolean(data.is_pinned),
     pinnedAt: data.pinned_at ? String(data.pinned_at) : null,
+    metadata: data.metadata ? (data.metadata as VisitorMetadata) : null,
   };
 }
 
 export async function getOrCreateConversationByHash(
   sessionTokenHash: string,
   defaultName = "Visitor",
+  metadata?: VisitorMetadata | null,
 ): Promise<Conversation> {
   const isSupabaseReady = await checkSupabaseAvailable();
 
@@ -191,12 +210,21 @@ export async function getOrCreateConversationByHash(
         .maybeSingle();
 
       if (data && !error) {
+        if (metadata && !data.metadata) {
+          try {
+            await serverClient
+              .from("chat_conversations")
+              .update({ metadata })
+              .eq("id", data.id);
+            data.metadata = metadata;
+          } catch {}
+        }
         return mapSupabaseConversation(data);
       }
 
       // Insert new conversation
       const newId = crypto.randomUUID();
-      const newConv = {
+      const newConv: Record<string, unknown> = {
         id: newId,
         session_token_hash: sessionTokenHash,
         visitor_name: defaultName,
@@ -207,6 +235,7 @@ export async function getOrCreateConversationByHash(
         last_message_at: new Date().toISOString(),
         is_archived: false,
         is_deleted: false,
+        metadata: metadata || null,
       };
 
       const { data: inserted, error: insertError } = await serverClient
@@ -230,7 +259,12 @@ export async function getOrCreateConversationByHash(
   return runWithLock(() => {
     const existingId = localStore.hashToId[sessionTokenHash];
     if (existingId && localStore.conversations[existingId] && !localStore.conversations[existingId].isDeleted) {
-      return localStore.conversations[existingId];
+      const existing = localStore.conversations[existingId];
+      if (metadata && !existing.metadata) {
+        existing.metadata = metadata;
+        persistStoreToDisk();
+      }
+      return existing;
     }
 
     const newId = crypto.randomUUID();
@@ -251,6 +285,7 @@ export async function getOrCreateConversationByHash(
       isDeleted: false,
       isPinned: false,
       pinnedAt: null,
+      metadata: metadata || null,
     };
 
     localStore.conversations[newId] = conv;
@@ -260,6 +295,32 @@ export async function getOrCreateConversationByHash(
     persistStoreToDisk();
 
     return conv;
+  });
+}
+
+export async function updateConversationMetadata(
+  conversationId: string,
+  metadata: VisitorMetadata,
+): Promise<void> {
+  const isSupabaseReady = await checkSupabaseAvailable();
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      await serverClient
+        .from("chat_conversations")
+        .update({ metadata })
+        .eq("id", conversationId);
+    } catch (e) {
+      if (shouldEnforceProductionPersistence()) throw e;
+    }
+  }
+
+  runWithLock(() => {
+    const conv = localStore.conversations[conversationId];
+    if (conv) {
+      conv.metadata = metadata;
+      persistStoreToDisk();
+    }
   });
 }
 
@@ -901,10 +962,11 @@ export async function markOtpUsed(otpId: string): Promise<void> {
 
 export async function getMessages(
   conversationId: string,
-  options?: { limit?: number; before?: string },
+  options?: { limit?: number; before?: string; role?: "visitor" | "owner" },
 ): Promise<ChatMessage[]> {
   const limit = Math.min(Math.max(options?.limit || 100, 1), 200);
   const before = options?.before;
+  const role = options?.role || "visitor";
 
   const isSupabaseReady = await checkSupabaseAvailable();
 
@@ -931,14 +993,29 @@ export async function getMessages(
         // Collect reply previews
         const messageMap = new Map<string, { id: string; senderType: "visitor" | "owner"; content: string }>();
         data.forEach((d) => {
+          const isVisDeleted = d.is_deleted && (d.deleted_by === "visitor" || (!d.deleted_by && d.sender_type === "visitor"));
+          const previewContent = d.is_deleted
+            ? role === "owner" && isVisDeleted
+              ? `${d.content} (Deleted by visitor)`
+              : "[Message deleted]"
+            : d.content;
           messageMap.set(d.id, {
             id: d.id,
             senderType: d.sender_type,
-            content: d.is_deleted ? "[Message deleted]" : d.content,
+            content: previewContent,
           });
         });
 
-        return data.map((d) => {
+        const mappedMessages: ChatMessage[] = [];
+        for (const d of data) {
+          const isMsgDeleted = Boolean(d.is_deleted);
+          const deletedBy = (d.deleted_by as "visitor" | "owner" | null) || (isMsgDeleted ? (d.sender_type === "visitor" ? "visitor" : "owner") : null);
+
+          // Visitor view: Visitor-deleted messages are strictly omitted from the visitor's chat view
+          if (role === "visitor" && isMsgDeleted && deletedBy === "visitor") {
+            continue;
+          }
+
           const attachments = Array.isArray(d.chat_attachments)
             ? d.chat_attachments.map((a: Record<string, unknown>) => ({
                 id: String(a.id),
@@ -954,24 +1031,33 @@ export async function getMessages(
 
           const replyPreview = d.reply_to_id ? messageMap.get(d.reply_to_id) || null : null;
 
-          return {
+          // Admin view: Visitor-deleted message preserves original content for admin review
+          // Owner-deleted message displays "[Message deleted]"
+          let content = String(d.content || "");
+          if (isMsgDeleted && deletedBy === "owner") {
+            content = "[Message deleted]";
+          }
+
+          mappedMessages.push({
             id: d.id,
             conversationId: d.conversation_id,
             senderType: d.sender_type,
-            content: d.is_deleted ? "[Message deleted]" : d.content,
+            content,
             createdAt: d.created_at,
             readAt: d.read_at,
             isEdited: Boolean(d.is_edited),
             editedAt: d.edited_at,
-            isDeleted: Boolean(d.is_deleted),
+            isDeleted: isMsgDeleted,
             deletedAt: d.deleted_at,
+            deletedBy: isMsgDeleted ? deletedBy : null,
             replyToId: d.reply_to_id,
             replyPreview,
             reactions: d.reactions || {},
             attachments,
             clientMessageId: d.client_message_id,
-          };
-        });
+          });
+        }
+        return mappedMessages;
       }
     } catch (e) {
       if (shouldEnforceProductionPersistence()) throw e;
@@ -981,9 +1067,15 @@ export async function getMessages(
   // Local durable store
   const all = localStore.messages[conversationId] || [];
   let filtered = all;
+
+  // Visitor view: Omit visitor-deleted messages
+  if (role === "visitor") {
+    filtered = filtered.filter((m) => !(m.isDeleted && (m.deletedBy === "visitor" || (!m.deletedBy && m.senderType === "visitor"))));
+  }
+
   if (before) {
     const beforeTime = new Date(before).getTime();
-    filtered = all.filter((m) => new Date(m.createdAt).getTime() < beforeTime);
+    filtered = filtered.filter((m) => new Date(m.createdAt).getTime() < beforeTime);
   }
 
   const sliced = filtered.slice(-limit);
@@ -991,19 +1083,32 @@ export async function getMessages(
   // Map reply previews and attachments
   const msgMap = new Map<string, { id: string; senderType: "visitor" | "owner"; content: string; snippet: string }>();
   all.forEach((m) => {
+    const isVisDel = m.isDeleted && (m.deletedBy === "visitor" || (!m.deletedBy && m.senderType === "visitor"));
+    const preview = m.isDeleted
+      ? role === "owner" && isVisDel
+        ? `${m.content} (Deleted by visitor)`
+        : "[Message deleted]"
+      : m.content;
     msgMap.set(m.id, {
       id: m.id,
       senderType: m.senderType,
-      content: m.isDeleted ? "[Message deleted]" : m.content,
-      snippet: (m.isDeleted ? "[Message deleted]" : m.content).slice(0, 100),
+      content: preview,
+      snippet: preview.slice(0, 100),
     });
   });
 
-  return sliced.map((m) => ({
-    ...m,
-    content: m.isDeleted ? "[Message deleted]" : m.content,
-    replyPreview: m.replyToId ? msgMap.get(m.replyToId) || null : null,
-  }));
+  return sliced.map((m) => {
+    let content = m.content;
+    if (m.isDeleted && m.deletedBy === "owner") {
+      content = "[Message deleted]";
+    }
+    return {
+      ...m,
+      content,
+      deletedBy: m.isDeleted ? (m.deletedBy || (m.senderType === "visitor" ? "visitor" : "owner")) : null,
+      replyPreview: m.replyToId ? msgMap.get(m.replyToId) || null : null,
+    };
+  });
 }
 
 export async function addMessage({
@@ -1302,13 +1407,21 @@ export async function deleteMessage(
   if (isSupabaseReady) {
     try {
       const serverClient = getServerSupabase();
+      const updateData: Record<string, unknown> = {
+        is_deleted: true,
+        deleted_at: now,
+        deleted_by: deleterType,
+      };
+
+      // Owner soft-delete replaces content with placeholder.
+      // Visitor deletion strictly PRESERVES original content for admin visibility.
+      if (deleterType === "owner") {
+        updateData.content = "[Message deleted]";
+      }
+
       let query = serverClient
         .from("chat_messages")
-        .update({
-          content: "[Message deleted]",
-          is_deleted: true,
-          deleted_at: now,
-        })
+        .update(updateData)
         .eq("id", messageId)
         .eq("conversation_id", conversationId);
 
@@ -1331,7 +1444,10 @@ export async function deleteMessage(
 
     msg.isDeleted = true;
     msg.deletedAt = now;
-    msg.content = "[Message deleted]";
+    msg.deletedBy = deleterType;
+    if (deleterType === "owner") {
+      msg.content = "[Message deleted]";
+    }
     persistStoreToDisk();
     return true;
   });
@@ -1558,8 +1674,10 @@ export async function markMessagesAsRead(
   runWithLock(() => {
     const msgs = localStore.messages[conversationId] || [];
     msgs.forEach((m) => {
-      if (readerType === "owner" && m.senderType === "visitor") m.readAt = now;
-      if (readerType === "visitor" && m.senderType === "owner") m.readAt = now;
+      if (!m.readAt) {
+        if (readerType === "owner" && m.senderType === "visitor") m.readAt = now;
+        if (readerType === "visitor" && m.senderType === "owner") m.readAt = now;
+      }
     });
 
     const conv = localStore.conversations[conversationId];
@@ -1846,7 +1964,7 @@ export async function getFullConversationHistoryForPdf(
   const conv = await getConversationById(conversationId);
   if (!conv) return null;
 
-  const messages = await getMessages(conversationId, { limit: 1000 });
+  const messages = await getMessages(conversationId, { limit: 1000, role: "owner" });
   return { conversation: conv, messages };
 }
 
@@ -1981,4 +2099,702 @@ export async function logNotification(entry: Omit<NotificationLog, "id" | "sentA
     localStore.notificationLogs.push(log);
     persistStoreToDisk();
   });
+}
+
+// ==============================================================================
+// 24-HOUR RETENTION & PERMANENT MESSAGE ARCHIVE BATCH MANAGEMENT
+// ==============================================================================
+
+function mapSupabaseArchiveBatch(data: Record<string, unknown>): ChatArchiveBatch {
+  return {
+    id: String(data.id),
+    conversationId: String(data.conversation_id),
+    messageIds: Array.isArray(data.message_ids)
+      ? data.message_ids
+      : typeof data.message_ids === "string"
+      ? JSON.parse(data.message_ids)
+      : [],
+    messageCount: Number(data.message_count || 0),
+    status: data.status as ChatArchiveBatch["status"],
+    pdfStoragePath: data.pdf_storage_path ? String(data.pdf_storage_path) : null,
+    emailMessageId: data.email_message_id ? String(data.email_message_id) : null,
+    deliveryConfirmedAt: data.delivery_confirmed_at ? String(data.delivery_confirmed_at) : null,
+    deletedAt: data.deleted_at ? String(data.deleted_at) : null,
+    errorMessage: data.error_message ? String(data.error_message) : null,
+    createdAt: String(data.created_at),
+    updatedAt: String(data.updated_at),
+  };
+}
+
+export async function createArchiveBatchRecord(
+  batch: Partial<ChatArchiveBatch> & {
+    conversationId: string;
+    messageIds: string[];
+    messageCount: number;
+    cutoffReadAt?: string;
+  },
+): Promise<ChatArchiveBatch> {
+  const now = new Date().toISOString();
+  const record: ChatArchiveBatch = {
+    id: batch.id || crypto.randomUUID(),
+    conversationId: batch.conversationId,
+    messageIds: batch.messageIds,
+    messageCount: batch.messageCount,
+    status: batch.status || "pending",
+    pdfStoragePath: batch.pdfStoragePath || null,
+    emailMessageId: batch.emailMessageId || null,
+    deliveryConfirmedAt: batch.deliveryConfirmedAt || null,
+    deletedAt: batch.deletedAt || null,
+    errorMessage: batch.errorMessage || null,
+    cutoffReadAt: batch.cutoffReadAt || null,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  runWithLock(() => {
+    localStore.archiveBatches[record.id] = record;
+    persistStoreToDisk();
+  });
+
+  const isSupabaseReady = await checkSupabaseAvailable();
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      const { error } = await serverClient.from("chat_archive_batches").insert([
+        {
+          id: record.id,
+          conversation_id: record.conversationId,
+          message_ids: record.messageIds,
+          message_count: record.messageCount,
+          status: record.status,
+          pdf_storage_path: record.pdfStoragePath,
+          email_message_id: record.emailMessageId,
+          delivery_confirmed_at: record.deliveryConfirmedAt,
+          deleted_at: record.deletedAt,
+          error_message: record.errorMessage,
+          created_at: record.createdAt,
+          updated_at: record.updatedAt,
+        },
+      ]);
+      if (error) {
+        console.warn("[Live Chat Archive DB] Supabase insert warning:", error.message);
+      }
+    } catch {
+      // Non-fatal Supabase sync
+    }
+  }
+
+  return record;
+}
+
+export async function getArchiveBatchById(id: string): Promise<ChatArchiveBatch | null> {
+  const isSupabaseReady = await checkSupabaseAvailable();
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      const { data, error } = await serverClient
+        .from("chat_archive_batches")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (data && !error) {
+        return mapSupabaseArchiveBatch(data);
+      }
+    } catch {
+      // Fallback to local store
+    }
+  }
+
+  return localStore.archiveBatches[id] || null;
+}
+
+export async function getArchiveBatchByEmailMessageId(
+  emailMessageId: string,
+): Promise<ChatArchiveBatch | null> {
+  const isSupabaseReady = await checkSupabaseAvailable();
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      const { data, error } = await serverClient
+        .from("chat_archive_batches")
+        .select("*")
+        .eq("email_message_id", emailMessageId)
+        .maybeSingle();
+
+      if (data && !error) {
+        return mapSupabaseArchiveBatch(data);
+      }
+    } catch {
+      // Fallback
+    }
+  }
+
+  for (const b of Object.values(localStore.archiveBatches)) {
+    if (b.emailMessageId === emailMessageId) {
+      return b;
+    }
+  }
+  return null;
+}
+
+export async function updateArchiveBatch(
+  id: string,
+  updates: Partial<ChatArchiveBatch>,
+): Promise<ChatArchiveBatch | null> {
+  const now = new Date().toISOString();
+
+  runWithLock(() => {
+    const existing = localStore.archiveBatches[id];
+    if (existing) {
+      Object.assign(existing, updates, { updatedAt: now });
+      localStore.archiveBatches[id] = existing;
+      persistStoreToDisk();
+    }
+  });
+
+  const isSupabaseReady = await checkSupabaseAvailable();
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      const payload: Record<string, unknown> = {
+        updated_at: now,
+      };
+      if (updates.status !== undefined) payload.status = updates.status;
+      if (updates.pdfStoragePath !== undefined) payload.pdf_storage_path = updates.pdfStoragePath;
+      if (updates.emailMessageId !== undefined) payload.email_message_id = updates.emailMessageId;
+      if (updates.deliveryConfirmedAt !== undefined)
+        payload.delivery_confirmed_at = updates.deliveryConfirmedAt;
+      if (updates.deletedAt !== undefined) payload.deleted_at = updates.deletedAt;
+      if (updates.errorMessage !== undefined) payload.error_message = updates.errorMessage;
+
+      await serverClient.from("chat_archive_batches").update(payload).eq("id", id);
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  return getArchiveBatchById(id);
+}
+
+export async function getAllArchiveBatches(conversationId?: string): Promise<ChatArchiveBatch[]> {
+  const isSupabaseReady = await checkSupabaseAvailable();
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      let query = serverClient
+        .from("chat_archive_batches")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (conversationId) {
+        query = query.eq("conversation_id", conversationId);
+      }
+
+      const { data, error } = await query;
+      if (data && !error) {
+        return data.map(mapSupabaseArchiveBatch);
+      }
+    } catch {
+      // Fallback
+    }
+  }
+
+  const list = Object.values(localStore.archiveBatches);
+  const filtered = conversationId ? list.filter((b) => b.conversationId === conversationId) : list;
+  return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+/**
+ * Scan for messages that have passed their 24-hour read threshold and group them by conversation.
+ * Excludes any messages that are already tracked in active or delivered archive batches.
+ */
+export async function getEligibleMessagesForRetention(
+  retentionMs: number = 24 * 60 * 60 * 1000,
+): Promise<Record<string, ChatMessage[]>> {
+  const now = Date.now();
+  const thresholdIso = new Date(now - retentionMs).toISOString();
+
+  // 1. Gather all message IDs currently in non-failed batches to prevent duplicate batching
+  const allBatches = await getAllArchiveBatches();
+  const excludedMessageIds = new Set<string>();
+  for (const b of allBatches) {
+    if (b.status !== "failed") {
+      b.messageIds.forEach((mId) => excludedMessageIds.add(mId));
+    }
+  }
+
+  const grouped: Record<string, ChatMessage[]> = {};
+
+  const isSupabaseReady = await checkSupabaseAvailable();
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      const { data: eligibleRows, error } = await serverClient
+        .from("chat_messages")
+        .select("*, chat_attachments(*)")
+        .not("read_at", "is", null)
+        .lte("read_at", thresholdIso)
+        .order("created_at", { ascending: true });
+
+      if (!error && Array.isArray(eligibleRows)) {
+        for (const row of eligibleRows) {
+          if (excludedMessageIds.has(row.id)) continue;
+
+          const msg: ChatMessage = {
+            id: row.id,
+            conversationId: row.conversation_id,
+            senderType: row.sender_type,
+            content: row.content,
+            createdAt: row.created_at,
+            readAt: row.read_at,
+            isEdited: Boolean(row.is_edited),
+            editedAt: row.edited_at,
+            isDeleted: Boolean(row.is_deleted),
+            deletedAt: row.deleted_at,
+            replyToId: row.reply_to_id,
+            reactions: row.reactions || {},
+            clientMessageId: row.client_message_id,
+            attachments: Array.isArray(row.chat_attachments)
+              ? row.chat_attachments.map((a: Record<string, unknown>) => ({
+                  id: String(a.id),
+                  conversationId: String(a.conversation_id),
+                  messageId: a.message_id ? String(a.message_id) : null,
+                  fileName: String(a.file_name),
+                  fileSize: Number(a.file_size),
+                  mimeType: String(a.mime_type),
+                  storagePath: String(a.storage_path),
+                  createdAt: String(a.created_at),
+                }))
+              : [],
+          };
+
+          if (!grouped[msg.conversationId]) {
+            grouped[msg.conversationId] = [];
+          }
+          grouped[msg.conversationId].push(msg);
+        }
+        return grouped;
+      }
+    } catch {
+      // Fallback to local store
+    }
+  }
+
+  // Local store scanning
+  for (const [convId, msgs] of Object.entries(localStore.messages)) {
+    for (const msg of msgs) {
+      if (!msg.readAt) continue; // Unread messages are NEVER eligible!
+      if (excludedMessageIds.has(msg.id)) continue;
+
+      const readTime = new Date(msg.readAt).getTime();
+      if (now - readTime >= retentionMs) {
+        if (!grouped[convId]) {
+          grouped[convId] = [];
+        }
+        grouped[convId].push(msg);
+      }
+    }
+  }
+
+  return grouped;
+}
+
+/**
+ * Permanently delete archived messages and their active storage attachments from the database.
+ * Executed ONLY after confirmed delivery of the corresponding archive PDF email.
+ */
+export async function permanentlyDeleteArchivedMessages(
+  conversationId: string,
+  messageIds: string[],
+): Promise<{ deletedCount: number }> {
+  if (!messageIds || messageIds.length === 0) {
+    return { deletedCount: 0 };
+  }
+
+  // 1. Remove active attachment files from disk
+  for (const mId of messageIds) {
+    for (const att of Object.values(localStore.attachments)) {
+      if (att.messageId === mId && att.storagePath) {
+        try {
+          if (fs.existsSync(att.storagePath)) {
+            fs.unlinkSync(att.storagePath);
+          }
+        } catch {
+          // Non-fatal file unlink
+        }
+      }
+    }
+  }
+
+  const isSupabaseReady = await checkSupabaseAvailable();
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+
+      // Find attachment file paths from Supabase before deleting rows
+      const { data: supaAtts } = await serverClient
+        .from("chat_attachments")
+        .select("storage_path")
+        .in("message_id", messageIds);
+
+      if (Array.isArray(supaAtts)) {
+        for (const sa of supaAtts) {
+          if (sa.storage_path && fs.existsSync(sa.storage_path)) {
+            try {
+              fs.unlinkSync(sa.storage_path);
+            } catch {}
+          }
+        }
+      }
+
+      // Hard delete from chat_attachments
+      await serverClient
+        .from("chat_attachments")
+        .delete()
+        .in("message_id", messageIds);
+
+      // Hard delete from chat_messages
+      await serverClient
+        .from("chat_messages")
+        .delete()
+        .in("id", messageIds);
+
+      // Refresh last_message_at on the conversation to the most recent remaining message
+      const { data: remainingMsgs } = await serverClient
+        .from("chat_messages")
+        .select("created_at")
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (remainingMsgs && remainingMsgs.length > 0) {
+        await serverClient
+          .from("chat_conversations")
+          .update({ last_message_at: remainingMsgs[0].created_at })
+          .eq("id", conversationId);
+      }
+    } catch (e) {
+      if (shouldEnforceProductionPersistence()) throw e;
+    }
+  }
+
+  // Hard delete from localStore memory and disk
+  runWithLock(() => {
+    // Clean attachments
+    const attIdsToDelete: string[] = [];
+    for (const [id, att] of Object.entries(localStore.attachments)) {
+      if (att.messageId && messageIds.includes(att.messageId)) {
+        attIdsToDelete.push(id);
+      }
+    }
+    for (const id of attIdsToDelete) {
+      delete localStore.attachments[id];
+    }
+
+    // Clean messages
+    if (localStore.messages[conversationId]) {
+      localStore.messages[conversationId] = localStore.messages[conversationId].filter(
+        (m) => !messageIds.includes(m.id),
+      );
+
+      // Update conversation last_message_at
+      const remaining = localStore.messages[conversationId];
+      const conv = localStore.conversations[conversationId];
+      if (conv) {
+        if (remaining.length > 0) {
+          conv.lastMessageAt = remaining[remaining.length - 1].createdAt;
+        }
+        localStore.conversations[conversationId] = conv;
+      }
+    }
+    persistStoreToDisk();
+  });
+
+  return { deletedCount: messageIds.length };
+}
+
+/**
+ * Testing helper to set exact readAt timestamp on a message for retention tests.
+ */
+export async function updateMessageReadAtForTesting(
+  conversationId: string,
+  messageId: string,
+  readAt: string | null,
+): Promise<void> {
+  const isSupabaseReady = await checkSupabaseAvailable();
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      await serverClient
+        .from("chat_messages")
+        .update({ read_at: readAt })
+        .eq("id", messageId);
+    } catch {}
+  }
+  runWithLock(() => {
+    const list = localStore.messages[conversationId] || [];
+    const msg = list.find((m) => m.id === messageId);
+    if (msg) {
+      msg.readAt = readAt;
+      persistStoreToDisk();
+    }
+  });
+}
+
+// ==============================================================================
+// SINGLE ACTIVE SESSION REGISTRY STORAGE
+// ==============================================================================
+
+export async function registerActiveSessionRecord(
+  record: ActiveSessionRecord,
+  previousTokenHashToSupersede?: string | null,
+): Promise<ActiveSessionRecord> {
+  const normAccountId = record.accountId.trim().toLowerCase();
+  const normalizedRecord: ActiveSessionRecord = {
+    ...record,
+    accountId: normAccountId,
+  };
+
+  const isSupabaseReady = await checkSupabaseAvailable();
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+
+      // If there is an explicit previous token hash to supersede, record it
+      if (previousTokenHashToSupersede && previousTokenHashToSupersede !== record.tokenHash) {
+        await serverClient
+          .from("auth_superseded_sessions")
+          .upsert({
+            session_token_hash: previousTokenHashToSupersede,
+            account_type: record.accountType,
+            account_id: normAccountId,
+            superseded_at: new Date().toISOString(),
+            reason: "superseded_by_new_login",
+          });
+      }
+
+      // Upsert active session (atomic on conflict (account_type, account_id))
+      const { error } = await serverClient
+        .from("auth_active_sessions")
+        .upsert(
+          {
+            account_type: record.accountType,
+            account_id: normAccountId,
+            session_id: record.sessionId,
+            session_token_hash: record.tokenHash,
+            conversation_id: record.conversationId || null,
+            created_at: record.createdAt,
+            last_active_at: record.lastActiveAt,
+            expires_at: record.expiresAt,
+            is_active: record.isActive,
+            metadata: record.metadata || null,
+          },
+          { onConflict: "account_type,account_id" },
+        );
+
+      if (error && shouldEnforceProductionPersistence()) {
+        throw new DatabaseUnavailableError(`Supabase auth_active_sessions upsert failed: ${error.message}`);
+      }
+    } catch (e) {
+      if (shouldEnforceProductionPersistence()) throw e;
+      console.warn("[Live Chat DB] Error upserting session in Supabase, using durable storage:", e);
+    }
+  }
+
+  return runWithLock(() => {
+    const key = `${record.accountType}:${normAccountId}`;
+    const existing = localStore.activeSessions[key];
+
+    const hashesToSupersede = new Set<string>();
+    if (existing && existing.tokenHash !== record.tokenHash) {
+      hashesToSupersede.add(existing.tokenHash);
+    }
+    if (previousTokenHashToSupersede && previousTokenHashToSupersede !== record.tokenHash) {
+      hashesToSupersede.add(previousTokenHashToSupersede);
+    }
+
+    for (const oldHash of hashesToSupersede) {
+      localStore.supersededSessions[oldHash] = {
+        tokenHash: oldHash,
+        accountType: record.accountType,
+        accountId: normAccountId,
+        supersededAt: new Date().toISOString(),
+        reason: "superseded_by_new_login",
+      };
+    }
+
+    localStore.activeSessions[key] = normalizedRecord;
+    persistStoreToDisk();
+    return normalizedRecord;
+  });
+}
+
+export async function getActiveSessionRecord(
+  accountType: "admin" | "visitor",
+  accountId: string,
+): Promise<ActiveSessionRecord | null> {
+  const normAccountId = accountId.trim().toLowerCase();
+  const isSupabaseReady = await checkSupabaseAvailable();
+
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      const { data, error } = await serverClient
+        .from("auth_active_sessions")
+        .select("*")
+        .eq("account_type", accountType)
+        .eq("account_id", normAccountId)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (data && !error) {
+        return {
+          accountType: data.account_type,
+          accountId: data.account_id,
+          sessionId: data.session_id,
+          tokenHash: data.session_token_hash,
+          conversationId: data.conversation_id,
+          createdAt: data.created_at,
+          lastActiveAt: data.last_active_at,
+          expiresAt: data.expires_at,
+          isActive: Boolean(data.is_active),
+          metadata: data.metadata || null,
+        };
+      }
+    } catch (e) {
+      if (shouldEnforceProductionPersistence()) throw e;
+    }
+  }
+
+  const key = `${accountType}:${normAccountId}`;
+  const s = localStore.activeSessions[key];
+  return s && s.isActive ? s : null;
+}
+
+export async function isSessionTokenSuperseded(
+  tokenHash: string,
+): Promise<SupersededSessionRecord | null> {
+  if (!tokenHash) return null;
+  const isSupabaseReady = await checkSupabaseAvailable();
+
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      const { data, error } = await serverClient
+        .from("auth_superseded_sessions")
+        .select("*")
+        .eq("session_token_hash", tokenHash)
+        .maybeSingle();
+
+      if (data && !error) {
+        return {
+          tokenHash: data.session_token_hash,
+          accountType: data.account_type,
+          accountId: data.account_id,
+          supersededAt: data.superseded_at,
+          reason: data.reason,
+        };
+      }
+    } catch (e) {
+      if (shouldEnforceProductionPersistence()) throw e;
+    }
+  }
+
+  return localStore.supersededSessions[tokenHash] || null;
+}
+
+export async function revokeActiveSessionRecord(
+  accountType: "admin" | "visitor",
+  accountId: string,
+  tokenHash?: string,
+): Promise<boolean> {
+  const normAccountId = accountId.trim().toLowerCase();
+  const now = new Date().toISOString();
+  const isSupabaseReady = await checkSupabaseAvailable();
+
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+
+      if (tokenHash) {
+        await serverClient
+          .from("auth_superseded_sessions")
+          .upsert({
+            session_token_hash: tokenHash,
+            account_type: accountType,
+            account_id: normAccountId,
+            superseded_at: now,
+            reason: "logout",
+          });
+      }
+
+      await serverClient
+        .from("auth_active_sessions")
+        .update({
+          is_active: false,
+          last_active_at: now,
+        })
+        .eq("account_type", accountType)
+        .eq("account_id", normAccountId);
+    } catch (e) {
+      if (shouldEnforceProductionPersistence()) throw e;
+    }
+  }
+
+  return runWithLock(() => {
+    const key = `${accountType}:${normAccountId}`;
+    if (tokenHash) {
+      localStore.supersededSessions[tokenHash] = {
+        tokenHash,
+        accountType,
+        accountId: normAccountId,
+        supersededAt: now,
+        reason: "logout",
+      };
+    }
+
+    if (localStore.activeSessions[key]) {
+      localStore.activeSessions[key].isActive = false;
+      localStore.activeSessions[key].lastActiveAt = now;
+    }
+
+    persistStoreToDisk();
+    return true;
+  });
+}
+
+export async function touchActiveSession(
+  accountType: "admin" | "visitor",
+  accountId: string,
+): Promise<void> {
+  const normAccountId = accountId.trim().toLowerCase();
+  const now = new Date().toISOString();
+  const isSupabaseReady = await checkSupabaseAvailable();
+
+  if (isSupabaseReady) {
+    try {
+      const serverClient = getServerSupabase();
+      await serverClient
+        .from("auth_active_sessions")
+        .update({ last_active_at: now })
+        .eq("account_type", accountType)
+        .eq("account_id", normAccountId);
+    } catch {}
+  }
+
+  runWithLock(() => {
+    const key = `${accountType}:${normAccountId}`;
+    if (localStore.activeSessions[key]) {
+      localStore.activeSessions[key].lastActiveAt = now;
+      persistStoreToDisk();
+    }
+  });
+}
+
+/**
+ * Helper for testing server restarts / instance simulated reloads.
+ */
+export function reloadDurableStoreFromDiskForTesting(): void {
+  initDurableStore();
 }

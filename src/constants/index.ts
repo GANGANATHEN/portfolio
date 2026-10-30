@@ -16,10 +16,12 @@ import {
   git,
   java,
   python,
+  cpp,
   ibm,
   aws,
   cisco,
   redhat,
+  imuii,
   uomcodl,
   devtown,
   eminent,
@@ -63,6 +65,7 @@ export const technologies = [
   { name: "Git", icon: git },
   { name: "Java", icon: java },
   { name: "Python", icon: python },
+  { name: "C++", icon: cpp },
 ];
 
 export const experiences = [
@@ -140,7 +143,7 @@ export const experiences = [
   {
     title: "Front-End Developer",
     company_name: "IMUII Technology",
-    icon: redhat,
+    icon: imuii,
     iconBg: "#F0F8FF",
     date: "Apr 2025 - Present",
     score: "Full-Time",

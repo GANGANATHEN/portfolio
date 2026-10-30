@@ -70,8 +70,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Extract safe non-invasive moderation metadata (server-generated)
-    const metadata = parseClientMetadata(req);
+    // Extract safe non-invasive moderation metadata (server-generated with optional client metrics)
+    const clientPayload = body.client_telemetry || body.clientMeta;
+    const metadata = parseClientMetadata(req, clientPayload);
 
     const record = await createCommand(
       {

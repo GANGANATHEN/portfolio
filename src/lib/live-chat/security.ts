@@ -85,15 +85,92 @@ export function isValidEmail(email: string): boolean {
   return emailRegex.test(email.trim());
 }
 
+export const SESSION_SUPERSEDED_MESSAGE =
+  "Your account was signed in on another device. Please log in again.";
+export const SESSION_SUPERSEDED_CODE = "SESSION_SUPERSEDED";
+export const SESSION_EXPIRED_CODE = "SESSION_EXPIRED";
+export const SESSION_INVALID_CODE = "SESSION_INVALID";
+
 /**
- * Create a signed Admin Session token (HMAC-SHA256 with timestamp)
+ * Create a signed Admin Session token (HMAC-SHA256 with timestamp and unique sessionId)
  */
-export function createAdminSessionToken(): string {
+export function createAdminSessionToken(sessionId: string = crypto.randomUUID()): string {
   const secret = getAuthSecret();
   const timestamp = Date.now();
-  const payload = `admin:${timestamp}`;
+  const payload = `admin:${sessionId}:${timestamp}`;
   const hmac = crypto.createHmac("sha256", secret).update(payload).digest("hex");
   return `${payload}:${hmac}`;
+}
+
+export interface ParsedAdminSessionToken {
+  isValid: boolean;
+  sessionId?: string;
+  timestamp?: number;
+  isExpired?: boolean;
+}
+
+/**
+ * Parse and verify a signed Admin Session token with constant-time HMAC check
+ */
+export function parseAndVerifyAdminSessionToken(token: string | null | undefined): ParsedAdminSessionToken {
+  if (!token) return { isValid: false };
+  let cleanToken = token;
+  if (cleanToken.includes("%3A") || cleanToken.includes("%3a")) {
+    try {
+      cleanToken = decodeURIComponent(cleanToken);
+    } catch {}
+  }
+  const parts = cleanToken.split(":");
+  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+  const secret = getAuthSecret();
+
+  // New format with unique sessionId: admin:${sessionId}:${timestamp}:${hmac}
+  if (parts.length === 4) {
+    const [role, sessionId, timestampStr, signature] = parts;
+    if (role !== "admin" || !sessionId) return { isValid: false };
+
+    const timestamp = parseInt(timestampStr, 10);
+    if (isNaN(timestamp)) return { isValid: false };
+
+    if (Date.now() - timestamp > sevenDaysMs) {
+      return { isValid: false, isExpired: true, sessionId, timestamp };
+    }
+
+    const payload = `admin:${sessionId}:${timestampStr}`;
+    const expectedHmac = crypto.createHmac("sha256", secret).update(payload).digest("hex");
+
+    try {
+      const match = crypto.timingSafeEqual(Buffer.from(signature, "hex"), Buffer.from(expectedHmac, "hex"));
+      return { isValid: match, sessionId, timestamp, isExpired: false };
+    } catch {
+      return { isValid: false };
+    }
+  }
+
+  // Legacy format: admin:${timestamp}:${hmac}
+  if (parts.length === 3) {
+    const [role, timestampStr, signature] = parts;
+    if (role !== "admin") return { isValid: false };
+
+    const timestamp = parseInt(timestampStr, 10);
+    if (isNaN(timestamp)) return { isValid: false };
+
+    if (Date.now() - timestamp > sevenDaysMs) {
+      return { isValid: false, isExpired: true, timestamp };
+    }
+
+    const payload = `admin:${timestampStr}`;
+    const expectedHmac = crypto.createHmac("sha256", secret).update(payload).digest("hex");
+
+    try {
+      const match = crypto.timingSafeEqual(Buffer.from(signature, "hex"), Buffer.from(expectedHmac, "hex"));
+      return { isValid: match, timestamp, isExpired: false };
+    } catch {
+      return { isValid: false };
+    }
+  }
+
+  return { isValid: false };
 }
 
 /**
@@ -101,30 +178,7 @@ export function createAdminSessionToken(): string {
  * Valid for 7 days with constant-time comparison
  */
 export function verifyAdminSessionToken(token: string | null | undefined): boolean {
-  if (!token) return false;
-  const parts = token.split(":");
-  if (parts.length !== 3) return false;
-
-  const [role, timestampStr, signature] = parts;
-  if (role !== "admin") return false;
-
-  const timestamp = parseInt(timestampStr, 10);
-  if (isNaN(timestamp)) return false;
-
-  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
-  if (Date.now() - timestamp > sevenDaysMs) {
-    return false; // Expired
-  }
-
-  const secret = getAuthSecret();
-  const payload = `admin:${timestampStr}`;
-  const expectedHmac = crypto.createHmac("sha256", secret).update(payload).digest("hex");
-
-  try {
-    return crypto.timingSafeEqual(Buffer.from(signature, "hex"), Buffer.from(expectedHmac, "hex"));
-  } catch {
-    return false;
-  }
+  return parseAndVerifyAdminSessionToken(token).isValid;
 }
 
 /**

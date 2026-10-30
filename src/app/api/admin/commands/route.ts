@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ADMIN_COOKIE_NAME, verifyAdminSessionToken } from "@/lib/live-chat/security";
+import { ADMIN_COOKIE_NAME } from "@/lib/live-chat/security";
+import { validateAdminSession, createSessionRejectedResponse } from "@/lib/live-chat/session-registry";
 import {
   getAllCommandsForAdmin,
   getCommandStats,
@@ -9,14 +10,10 @@ import {
 
 export const dynamic = "force-dynamic";
 
-function checkAdminAuth(req: NextRequest): boolean {
-  const token = req.cookies.get(ADMIN_COOKIE_NAME)?.value;
-  return verifyAdminSessionToken(token);
-}
-
 export async function GET(req: NextRequest) {
-  if (!checkAdminAuth(req)) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  const auth = await validateAdminSession(req);
+  if (!auth.authenticated) {
+    return createSessionRejectedResponse(auth, ADMIN_COOKIE_NAME);
   }
 
   try {
@@ -36,8 +33,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  if (!checkAdminAuth(req)) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  const auth = await validateAdminSession(req);
+  if (!auth.authenticated) {
+    return createSessionRejectedResponse(auth, ADMIN_COOKIE_NAME);
   }
 
   try {
@@ -76,8 +74,9 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  if (!checkAdminAuth(req)) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  const auth = await validateAdminSession(req);
+  if (!auth.authenticated) {
+    return createSessionRejectedResponse(auth, ADMIN_COOKIE_NAME);
   }
 
   try {

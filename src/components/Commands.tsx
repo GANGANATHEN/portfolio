@@ -123,6 +123,16 @@ export default function Commands() {
     setSubmitError(null);
 
     try {
+      const clientMeta =
+        typeof window !== "undefined"
+          ? {
+              screenResolution: `${window.screen?.width || 0}x${window.screen?.height || 0}`,
+              viewportDimensions: `${window.innerWidth}x${window.innerHeight}`,
+              deviceLanguage: navigator.language || "en",
+              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            }
+          : undefined;
+
       const res = await fetch("/api/commands", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -131,6 +141,7 @@ export default function Commands() {
           author_name: author,
           title: title.trim() || undefined,
           category,
+          clientMeta,
         }),
       });
 

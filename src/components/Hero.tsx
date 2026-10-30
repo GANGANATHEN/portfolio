@@ -45,7 +45,7 @@ const Hero = () => {
       ref={container}
       className="relative w-full h-dvh padding overflow-hidden"
     >
-      <div className="relative mt-20 flex flex-row items-start gap-5 z-10 pointer-events-none">
+      <div className="relative mt-16 sm:mt-20 flex flex-row items-start gap-3 sm:gap-5 z-10 pointer-events-none">
         {/* Graphics part */}
         <div className="flex flex-col justify-center items-center mt-5">
           <div className="hero-dot w-5 h-5 rounded-full bg-accent" />

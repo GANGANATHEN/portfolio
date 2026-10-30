@@ -6,13 +6,27 @@ import {
 } from "@/lib/live-chat/security";
 import {
   getOrCreateConversationByHash,
+  updateConversationMetadata,
   DatabaseUnavailableError,
 } from "@/lib/live-chat/db";
+import { extractVisitorMetadata } from "@/lib/metadata";
+import {
+  validateVisitorSession,
+  createSessionRejectedResponse,
+} from "@/lib/live-chat/session-registry";
 
 export async function GET(req: NextRequest) {
   try {
     let token = req.cookies.get(VISITOR_COOKIE_NAME)?.value;
     let isNewSession = false;
+
+    // Check if current token was invalidated / superseded on another device
+    if (token && token.length >= 32) {
+      const auth = await validateVisitorSession(req);
+      if (!auth.valid && auth.clearCookie) {
+        return createSessionRejectedResponse(auth, VISITOR_COOKIE_NAME);
+      }
+    }
 
     // Session token must strictly be 64-char hex (32 bytes)
     if (!token || token.length < 32 || !/^[0-9a-fA-F]+$/.test(token)) {
@@ -21,7 +35,8 @@ export async function GET(req: NextRequest) {
     }
 
     const tokenHash = hashToken(token);
-    const conversation = await getOrCreateConversationByHash(tokenHash);
+    const metadata = extractVisitorMetadata(req);
+    const conversation = await getOrCreateConversationByHash(tokenHash, "Visitor", metadata);
 
     const res = NextResponse.json({
       conversationId: conversation.id,

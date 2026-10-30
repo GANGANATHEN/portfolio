@@ -63,6 +63,9 @@ export default function AdminCommandsPage() {
         const data = await res.json();
         if (active) {
           setIsAuthenticated(Boolean(data.authenticated));
+          if (!data.authenticated && (data.code === "SESSION_SUPERSEDED" || data.error?.includes("another device"))) {
+            setLoginError("Your account was signed in on another device. Please log in again.");
+          }
         }
       } catch {
         if (active) setIsAuthenticated(false);
@@ -82,7 +85,11 @@ export default function AdminCommandsPage() {
     try {
       const res = await fetch("/api/admin/commands");
       if (res.status === 401) {
+        const errJson = await res.json().catch(() => ({}));
         setIsAuthenticated(false);
+        if (errJson.code === "SESSION_SUPERSEDED" || errJson.error?.includes("another device")) {
+          setLoginError("Your account was signed in on another device. Please log in again.");
+        }
         return;
       }
       if (!res.ok) {
@@ -634,10 +641,22 @@ export default function AdminCommandsPage() {
                       <div className="flex items-center gap-1.5" title="Operating System & Browser family">
                         <Globe className="w-3.5 h-3.5 text-blue-400" />
                         <span>
-                          {meta?.osFamily && meta.osFamily !== "Unknown" ? meta.osFamily : "OS Not available"} •{" "}
-                          {meta?.browserFamily && meta.browserFamily !== "Other" ? meta.browserFamily : "Browser Not available"}
+                          {meta?.osFamily && meta.osFamily !== "Unknown"
+                            ? `${meta.osFamily}${meta.osVersion ? ` ${meta.osVersion}` : ""}`
+                            : "OS Not available"} •{" "}
+                          {meta?.browserFamily && meta.browserFamily !== "Other"
+                            ? `${meta.browserFamily}${meta.browserVersion ? ` ${meta.browserVersion}` : ""}`
+                            : "Browser Not available"}
                         </span>
                       </div>
+
+                      {/* Approximate Location */}
+                      {(meta?.country || meta?.city) && (
+                        <div className="flex items-center gap-1.5 text-gray-300" title="Approximate IP-derived Location">
+                          <span className="text-amber-400">📍</span>
+                          <span>{[meta.city, meta.region, meta.country].filter(Boolean).join(", ")}</span>
+                        </div>
+                      )}
 
                       {/* Moderation IP */}
                       <div className="flex items-center gap-1.5 text-gray-500" title="Client IP address for moderation">
@@ -739,12 +758,38 @@ export default function AdminCommandsPage() {
                   <span className="text-cyan-400">{viewingCommand.category || "General"}</span>
                 </div>
                 <div>
-                  <span className="text-gray-500 block">Device</span>
-                  <span className="text-white capitalize">{viewingCommand.metadata?.deviceType || "Not available"}</span>
+                  <span className="text-gray-500 block">Device & OS</span>
+                  <span className="text-white capitalize">
+                    {viewingCommand.metadata?.deviceType || "Not available"} • {viewingCommand.metadata?.osFamily || "OS N/A"}{viewingCommand.metadata?.osVersion ? ` ${viewingCommand.metadata.osVersion}` : ""}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500 block">Browser</span>
+                  <span className="text-cyan-300">
+                    {viewingCommand.metadata?.browserFamily || "Not available"}{viewingCommand.metadata?.browserVersion ? ` ${viewingCommand.metadata.browserVersion}` : ""}
+                  </span>
                 </div>
                 <div>
                   <span className="text-gray-500 block">IP Address</span>
                   <span className="text-amber-400">{viewingCommand.metadata?.ip || "Not available"}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500 block">Approx. Location</span>
+                  <span className="text-gray-300">
+                    {viewingCommand.metadata?.city || viewingCommand.metadata?.country
+                      ? [viewingCommand.metadata.city, viewingCommand.metadata.region, viewingCommand.metadata.country].filter(Boolean).join(", ")
+                      : viewingCommand.metadata?.locationUnavailableReason || "Unavailable"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500 block">Screen / Viewport</span>
+                  <span className="text-gray-300">
+                    {viewingCommand.metadata?.screenResolution || viewingCommand.metadata?.viewportDimensions || "Unavailable"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500 block">Timezone</span>
+                  <span className="text-gray-300">{viewingCommand.metadata?.timezone || "Unavailable"}</span>
                 </div>
               </div>
 

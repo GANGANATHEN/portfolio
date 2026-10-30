@@ -6,7 +6,7 @@ const DEFAULT_COOLDOWN_MINUTES = 10;
 
 export interface NotificationLogEvent {
   correlationId: string;
-  eventType: "owner_new_message" | "visitor_owner_reply" | "visitor_otp";
+  eventType: "owner_new_message" | "visitor_owner_reply" | "visitor_otp" | "archive_pdf";
   status: "sent" | "throttled" | "failed" | "skipped" | "simulated";
   recipientDomain: string;
   providerErrorCategory?:
@@ -82,14 +82,16 @@ export async function sendEmailViaResend({
   to,
   subject,
   html,
+  attachments,
   correlationId = crypto.randomUUID(),
   eventType = "owner_new_message",
 }: {
   to: string;
   subject: string;
   html: string;
+  attachments?: Array<{ filename: string; content: string }>;
   correlationId?: string;
-  eventType?: "owner_new_message" | "visitor_owner_reply" | "visitor_otp";
+  eventType?: "owner_new_message" | "visitor_owner_reply" | "visitor_otp" | "archive_pdf";
 }): Promise<{
   success: boolean;
   errorCategory?: NotificationLogEvent["providerErrorCategory"];
@@ -153,18 +155,24 @@ export async function sendEmailViaResend({
   const fromEmail = getSanitizedFromEmail();
 
   try {
+    const emailPayload: Record<string, unknown> = {
+      from: fromEmail,
+      to: [to],
+      subject,
+      html,
+    };
+
+    if (Array.isArray(attachments) && attachments.length > 0) {
+      emailPayload.attachments = attachments;
+    }
+
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        from: fromEmail,
-        to: [to],
-        subject,
-        html,
-      }),
+      body: JSON.stringify(emailPayload),
       signal: AbortSignal.timeout(12000), // 12 second fail-safe timeout
     });
 

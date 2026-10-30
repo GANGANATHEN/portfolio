@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   ADMIN_COOKIE_NAME,
-  verifyAdminSessionToken,
   sanitizeText,
 } from "@/lib/live-chat/security";
+import { validateAdminSession, createSessionRejectedResponse } from "@/lib/live-chat/session-registry";
 import {
   getMessages,
   markMessagesAsRead,
@@ -15,9 +15,9 @@ import {
 
 export async function GET(req: NextRequest) {
   try {
-    const token = req.cookies.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(token)) {
-      return NextResponse.json({ error: "Unauthorized access." }, { status: 401 });
+    const auth = await validateAdminSession(req);
+    if (!auth.authenticated) {
+      return createSessionRejectedResponse(auth, ADMIN_COOKIE_NAME);
     }
 
     const conversationId = req.nextUrl.searchParams.get("conversationId");
@@ -36,6 +36,7 @@ export async function GET(req: NextRequest) {
     const messages = await getMessages(conversationId, {
       limit: isNaN(limit) ? 100 : limit,
       before,
+      role: "owner",
     });
 
     if (conversation.unreadOwnerCount > 0) {
@@ -68,9 +69,9 @@ export async function GET(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const token = req.cookies.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(token)) {
-      return NextResponse.json({ error: "Unauthorized access." }, { status: 401 });
+    const auth = await validateAdminSession(req);
+    if (!auth.authenticated) {
+      return createSessionRejectedResponse(auth, ADMIN_COOKIE_NAME);
     }
 
     const body = await req.json().catch(() => null);
@@ -108,9 +109,9 @@ export async function PATCH(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const token = req.cookies.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(token)) {
-      return NextResponse.json({ error: "Unauthorized access." }, { status: 401 });
+    const auth = await validateAdminSession(req);
+    if (!auth.authenticated) {
+      return createSessionRejectedResponse(auth, ADMIN_COOKIE_NAME);
     }
 
     const body = await req.json().catch(() => null);

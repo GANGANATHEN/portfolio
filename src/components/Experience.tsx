@@ -55,20 +55,26 @@ const Education = () => {
       );
 
       // 2. Connector and Card stagger animation
+      const isMobile = window.innerWidth <= 640;
       gsap.fromTo(
         ".data-panel",
-        { opacity: 0, x: (i) => (i % 2 === 0 ? -50 : 50) },
+        {
+          opacity: 0,
+          x: isMobile ? 0 : (i) => (i % 2 === 0 ? -40 : 40),
+          y: isMobile ? 25 : 0,
+        },
         {
           opacity: 1,
           x: 0,
+          y: 0,
           duration: 1,
-          stagger: 0.4,
+          stagger: 0.3,
           ease: "power2.out",
           scrollTrigger: {
             trigger: containerRef.current,
-            start: "top 50%",
+            start: "top 55%",
             end: getScrollDistance,
-            scrub: 1.5,
+            scrub: 1.2,
           },
         },
       );

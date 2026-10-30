@@ -47,11 +47,12 @@ const Navbar = () => {
         onEnter: () => {
           if (innerNavRef.current) {
             innerNavRef.current.classList.add("active-glass");
+            const isSmall = window.innerWidth <= 640;
 
             gsap.to(innerNavRef.current, {
-              width: "80%",
+              width: isSmall ? "94%" : "80%",
               maxWidth: "900px",
-              y: 20,
+              y: isSmall ? 8 : 20,
               borderRadius: "50px",
               duration: 0.4,
               ease: "power2.out",
@@ -111,11 +112,11 @@ const Navbar = () => {
     >
       <div
         ref={innerNavRef}
-        className="nav-island-container mt-2 w-full flex justify-between items-center px-6 md:px-12 py-2 pointer-events-auto"
+        className="nav-island-container mt-2 w-full flex justify-between items-center px-3.5 sm:px-6 md:px-12 py-2 pointer-events-auto"
       >
         <Link
           href="/"
-          className="flex items-center gap-3 nav-item"
+          className="flex items-center gap-2 sm:gap-3 nav-item"
           onClick={() => {
             setActive("");
             window.scrollTo(0, 0);
@@ -124,11 +125,11 @@ const Navbar = () => {
           <Image
             src={logo}
             alt="logo"
-            width={40}
-            height={40}
-            className="object-contain"
+            width={34}
+            height={34}
+            className="object-contain sm:w-10 sm:h-10"
           />
-          <p className="text-white text-[18px] font-extrabold tracking-wide cursor-pointer flex">
+          <p className="text-white text-[15px] sm:text-[18px] font-extrabold tracking-wide cursor-pointer flex items-center">
             GANGANATHAN{" "}
             <span className="sm:block hidden text-accent ml-2">. DEV</span>
           </p>

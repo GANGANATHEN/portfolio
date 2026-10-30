@@ -1,3 +1,6 @@
+import type { VisitorMetadata } from "../metadata";
+export type { VisitorMetadata };
+
 export interface ChatAttachment {
   id: string;
   conversationId: string;
@@ -20,6 +23,7 @@ export interface ChatMessage {
   editedAt?: string | null;
   isDeleted?: boolean;
   deletedAt?: string | null;
+  deletedBy?: "visitor" | "owner" | null;
   replyToId?: string | null;
   replyPreview?: {
     id: string;
@@ -50,6 +54,7 @@ export interface Conversation {
   isDeleted?: boolean;
   isPinned?: boolean;
   pinnedAt?: string | null;
+  metadata?: VisitorMetadata | null;
 }
 
 export interface NotificationLog {
@@ -81,4 +86,48 @@ export interface EmailOtpRecord {
   createdAt: string;
   expiresAt: string;
   usedAt?: string | null;
+}
+
+export interface ChatArchiveBatch {
+  id: string;
+  conversationId: string;
+  messageIds: string[];
+  messageCount: number;
+  status:
+    | "pending"
+    | "processing"
+    | "pdf_generated"
+    | "email_submitted"
+    | "delivered"
+    | "deleted"
+    | "failed";
+  pdfStoragePath?: string | null;
+  cutoffReadAt?: string | null;
+  emailMessageId?: string | null;
+  deliveryConfirmedAt?: string | null;
+  deletedAt?: string | null;
+  errorMessage?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ActiveSessionRecord {
+  accountType: "admin" | "visitor";
+  accountId: string; // 'admin' or normalized visitor email
+  sessionId: string;
+  tokenHash: string;
+  conversationId?: string | null;
+  createdAt: string;
+  lastActiveAt: string;
+  expiresAt: string;
+  isActive: boolean;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface SupersededSessionRecord {
+  tokenHash: string;
+  accountType: "admin" | "visitor";
+  accountId: string;
+  supersededAt: string;
+  reason: "superseded_by_new_login" | "logout" | "expired";
 }

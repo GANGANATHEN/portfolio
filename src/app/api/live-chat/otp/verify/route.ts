@@ -12,6 +12,7 @@ import {
   markOtpUsed,
   associateConversationWithVerifiedEmail,
 } from "@/lib/live-chat/db";
+import { registerVisitorActiveSession } from "@/lib/live-chat/session-registry";
 
 export async function POST(req: NextRequest) {
   try {
@@ -112,6 +113,9 @@ export async function POST(req: NextRequest) {
     // 2. Associate active session with verified email & restore existing conversation history if returning user
     const { conversation: finalConv, isRestored } =
       await associateConversationWithVerifiedEmail(conversation.id, tokenHash, email);
+
+    // 3. Register single active session for this verified account (atomically superseding any previous device)
+    await registerVisitorActiveSession(email, token, finalConv.id);
 
     const res = NextResponse.json({
       success: true,
