@@ -91,7 +91,7 @@ export default function Works() {
     <section
       id="work"
       ref={sectionRef}
-      className="relative min-h-screen py-20 sm:py-28 px-4 sm:px-6 md:px-12 lg:px-20 bg-[#020205] overflow-visible"
+      className="relative min-h-screen py-20 sm:py-28 px-4 sm:px-6 md:px-12 lg:px-20 bg-[#020205] overflow-visible scroll-mt-24"
     >
       <ParticleBackground />
 

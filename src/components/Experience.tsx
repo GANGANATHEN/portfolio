@@ -84,8 +84,9 @@ const Education = () => {
 
   return (
     <section
+      id="experience"
       ref={containerRef}
-      className="edu-section py-20 text-white relative overflow-hidden padding"
+      className="edu-section py-20 text-white relative overflow-hidden padding scroll-mt-24"
     >
       <h2 className="text-center text-2xl sm:text-3xl lg:text-5xl font-black mb-20 uppercase tracking-tighter text-transparent bg-clip-text bg-linear-to-r from-cyan-400 to-purple-500">
         Education & Experience.

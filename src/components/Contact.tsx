@@ -35,7 +35,7 @@ const Contact = () => {
     <section
       id="contact"
       ref={containerRef}
-      className="relative z-10 py-16 sm:py-24 px-3 sm:px-6 md:px-10 bg-[#020205] overflow-x-hidden min-h-screen flex items-center justify-center"
+      className="relative z-10 py-16 sm:py-24 px-3 sm:px-6 md:px-10 bg-[#020205] overflow-x-hidden min-h-screen flex items-center justify-center scroll-mt-24"
     >
       <ParticleBackground />
       <div className="max-w-7xl w-full mx-auto flex lg:flex-row flex-col-reverse gap-8 sm:gap-12 lg:gap-16 items-center">

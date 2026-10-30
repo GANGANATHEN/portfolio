@@ -31,6 +31,11 @@ export function useLenisScroll() {
       easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
     });
 
+    // Expose lenis instance globally for smooth programmatic anchor scrolling
+    if (typeof window !== "undefined") {
+      (window as unknown as { __lenis?: Lenis }).__lenis = lenis;
+    }
+
     // GSAP Ticker Sync
     const raf = (time: number) => {
       lenis.raf(time * 1000);
@@ -49,6 +54,9 @@ export function useLenisScroll() {
 
     // Cleanup
     return () => {
+      if (typeof window !== "undefined") {
+        delete (window as unknown as { __lenis?: Lenis }).__lenis;
+      }
       lenis.destroy();
       gsap.ticker.remove(raf);
     };

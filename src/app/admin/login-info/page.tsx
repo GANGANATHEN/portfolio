@@ -262,7 +262,7 @@ export default function AdminLoginInfoPage() {
   // Loading Screen while auth state is resolving
   if (isAuthenticated === null) {
     return (
-      <main className="min-h-screen bg-[#07090e] flex items-center justify-center p-4">
+      <main className="h-dvh max-h-dvh w-full bg-[#07090e] flex items-center justify-center p-4">
         <div className="w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
       </main>
     );
@@ -271,7 +271,7 @@ export default function AdminLoginInfoPage() {
   // Unauthenticated Login Card
   if (!isAuthenticated) {
     return (
-      <main className="min-h-screen bg-[#07090e] flex items-center justify-center p-4">
+      <main className="h-dvh max-h-dvh w-full bg-[#07090e] flex items-center justify-center p-4">
         <div className="w-full max-w-sm bg-[#0c1017] border border-white/10 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6 text-white text-center">
           <div className="w-14 h-14 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mx-auto text-cyan-400">
             <Lock className="w-6 h-6" />
@@ -338,59 +338,62 @@ export default function AdminLoginInfoPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#07090e] text-white p-4 sm:p-6 md:p-10 font-sans">
-      <div className="max-w-7xl mx-auto space-y-6 sm:space-y-8">
-        {/* Top Header */}
-        <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-white/10">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
-              <ShieldCheck className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Login Information & Active Sessions</h1>
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
-                  SINGLE ACTIVE SESSION
-                </span>
-              </div>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Centralized audit trail of authenticated accounts, active devices, superseded logins, and telemetry.
-              </p>
-            </div>
+    <div className="h-dvh max-h-dvh w-full overflow-hidden flex flex-col bg-[#07090e] text-white font-sans select-none">
+      {/* Top Header Shell */}
+      <header className="shrink-0 z-20 bg-[#07090e]/95 backdrop-blur-md border-b border-white/10 px-4 sm:px-6 md:px-10 py-3.5 sm:py-4 flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+            <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg sm:text-2xl font-bold tracking-tight">Login Information & Active Sessions</h1>
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
+                SINGLE ACTIVE SESSION
+              </span>
+            </div>
+            <p className="text-[11px] sm:text-xs text-gray-400 mt-0.5">
+              Centralized audit trail of authenticated accounts, active devices, superseded logins, and telemetry.
+            </p>
+          </div>
+        </div>
 
-          <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
-            <Link
-              href="/admin/inbox"
-              className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-mono text-gray-300 hover:text-white transition-colors flex items-center gap-1.5"
-            >
-              <Inbox className="w-4 h-4 text-cyan-400" />
-              <span>Live Inbox</span>
-            </Link>
-            <Link
-              href="/admin/commands"
-              className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-mono text-gray-300 hover:text-white transition-colors flex items-center gap-1.5"
-            >
-              <Terminal className="w-4 h-4 text-cyan-400" />
-              <span>Commands</span>
-            </Link>
-            <Link
-              href="/"
-              className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-mono text-gray-300 hover:text-white transition-colors flex items-center gap-1.5"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span className="hidden sm:inline">Portfolio</span>
-            </Link>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="p-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 hover:text-red-300 transition-colors cursor-pointer"
-              title="Sign Out"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-        </header>
+        <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
+          <Link
+            href="/admin/inbox"
+            className="px-3 py-1.5 sm:px-3 sm:py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-mono text-gray-300 hover:text-white transition-colors flex items-center gap-1.5"
+          >
+            <Inbox className="w-4 h-4 text-cyan-400" />
+            <span>Live Inbox</span>
+          </Link>
+          <Link
+            href="/admin/commands"
+            className="px-3 py-1.5 sm:px-3 sm:py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-mono text-gray-300 hover:text-white transition-colors flex items-center gap-1.5"
+          >
+            <Terminal className="w-4 h-4 text-cyan-400" />
+            <span>Commands</span>
+          </Link>
+          <Link
+            href="/"
+            className="px-3 py-1.5 sm:px-3 sm:py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-mono text-gray-300 hover:text-white transition-colors flex items-center gap-1.5"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span className="hidden sm:inline">Portfolio</span>
+          </Link>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="p-1.5 sm:p-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 hover:text-red-300 transition-colors cursor-pointer"
+            title="Sign Out"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
+      </header>
+
+      {/* Internal Scroll Area */}
+      <main className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4 sm:p-6 md:p-10">
+        <div className="max-w-7xl mx-auto space-y-6 sm:space-y-8 pb-12">
 
         {/* KPI Stat Cards */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -735,8 +738,9 @@ export default function AdminLoginInfoPage() {
             </>
           )}
         </section>
-      </div>
-    </main>
+        </div>
+      </main>
+    </div>
   );
 }
 

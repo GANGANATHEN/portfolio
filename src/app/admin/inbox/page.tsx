@@ -988,7 +988,7 @@ export default function AdminInboxPage({
   // Unauthenticated Login Screen
   if (isAuthenticated === false) {
     return (
-      <main className="min-h-screen bg-[#0e1621] flex items-center justify-center p-4">
+      <main className="h-dvh max-h-dvh w-full bg-[#0e1621] flex items-center justify-center p-4">
         <div className="w-full max-w-sm bg-[#17212b] border border-white/10 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6 text-white text-center">
           <div className="w-14 h-14 rounded-full bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mx-auto text-cyan-400">
             <Lock className="w-6 h-6" />
@@ -1057,7 +1057,7 @@ export default function AdminInboxPage({
   // Loading Session State
   if (isAuthenticated === null) {
     return (
-      <main className="min-h-screen bg-[#0e1621] flex items-center justify-center p-4">
+      <main className="h-dvh max-h-dvh w-full bg-[#0e1621] flex items-center justify-center p-4">
         <div className="text-gray-400 text-xs font-mono flex items-center gap-2">
           <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" />
           <span>Verifying admin session credentials...</span>
@@ -1067,7 +1067,7 @@ export default function AdminInboxPage({
   }
 
   return (
-    <div className="h-screen w-screen bg-[#0e1621] text-white flex flex-col overflow-hidden font-sans select-none">
+    <div className="h-dvh max-h-dvh w-full bg-[#0e1621] text-white flex flex-col overflow-hidden font-sans select-none">
       {/* Attachment Fullscreen Viewer Modal */}
       {activeViewerAttachment && (
         <AttachmentViewerModal

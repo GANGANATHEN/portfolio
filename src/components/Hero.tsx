@@ -42,8 +42,9 @@ const Hero = () => {
 
   return (
     <section
+      id="home"
       ref={container}
-      className="relative w-full h-dvh padding overflow-hidden"
+      className="relative w-full h-dvh padding overflow-hidden scroll-mt-24"
     >
       <div className="relative mt-16 sm:mt-20 flex flex-row items-start gap-3 sm:gap-5 z-10 pointer-events-none">
         {/* Graphics part */}
@@ -85,7 +86,7 @@ const Hero = () => {
       </div>
 
       <div
-        className="absolute top-0 inset-0  z-0 cursor-grab active:cursor-grabbing 
+        className="absolute top-0 inset-0 z-0 touch-pan-y cursor-grab active:cursor-grabbing 
         lg:[@media(min-height:700px)]:-top-30 
         lg:[@media(min-height:750px)]:-top-50 lg:[@media(min-height:800px)]:-top-70 
         lg:[@media(min-height:900px)]:-top-90

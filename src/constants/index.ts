@@ -39,8 +39,11 @@ import {
 } from "../../public/assets";
 
 export const navLinks = [
+  { id: "home", title: "Home" },
   { id: "about", title: "About" },
+  { id: "experience", title: "Experience" },
   { id: "work", title: "Work" },
+  { id: "tech", title: "Tech" },
   { id: "commands", title: "Commands" },
   { id: "contact", title: "Contact" },
 ];

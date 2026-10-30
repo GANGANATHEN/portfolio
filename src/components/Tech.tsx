@@ -40,7 +40,7 @@ const Tech = () => {
   }, []);
 
   return (
-    <section className="padding py-16 max-w-7xl mx-auto">
+    <section id="tech" className="padding py-16 max-w-7xl mx-auto scroll-mt-24">
       <div className="flex flex-row flex-wrap justify-center gap-6 sm:gap-10">
         {technologies.map((technology) => {
           const fallbackOrb = (

@@ -21,6 +21,7 @@
 
 html {
   scroll-behavior: smooth;
+  scroll-padding-top: 5.5rem;
   overflow-x: hidden;
 }
 
@@ -47,6 +48,38 @@ body {
 }
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/* Custom Admin & Content Scrollbar */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(34, 211, 238, 0.35) rgba(12, 16, 23, 0.6);
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(12, 16, 23, 0.7);
+  border-radius: 9999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(34, 211, 238, 0.3);
+  border-radius: 9999px;
+  border: 1px solid rgba(34, 211, 238, 0.15);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(34, 211, 238, 0.6);
+  border-color: rgba(34, 211, 238, 0.4);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:active {
+  background: rgba(34, 211, 238, 0.85);
 }
 
 /* my own colors */
@@ -128,35 +161,87 @@ body {
 
 /* navbar styles */
 .nav-island-container {
+  position: relative;
   isolation: isolate;
-  background: transparent;
-  -webkit-backdrop-filter: blur(0px) saturate(100%);
-  backdrop-filter: blur(0px) saturate(100%);
-  border: 1px solid transparent;
-  box-shadow: none;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.05) 0%,
+    rgba(255, 255, 255, 0.01) 50%,
+    rgba(255, 255, 255, 0.03) 100%
+  );
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
+  backdrop-filter: blur(8px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.25);
   transition:
+    width 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
     background 0.4s ease,
     -webkit-backdrop-filter 0.4s ease,
     backdrop-filter 0.4s ease,
     box-shadow 0.4s ease,
-    border 0.4s ease;
+    border-color 0.4s ease;
   will-change: width, transform, background, backdrop-filter;
 }
 
-/* Scrolled state - Premium White Glass Active */
+/* Scrolled state - Full Premium Liquid Glass Active */
 .nav-island-container.active-glass {
   background: linear-gradient(
     135deg,
-    rgba(255, 255, 255, 0.1) 0%,
-    rgba(255, 255, 255, 0.05) 100%
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(255, 255, 255, 0.03) 50%,
+    rgba(255, 255, 255, 0.07) 100%
   );
-  -webkit-backdrop-filter: blur(7px) saturate(150%);
-  isolation: isolate;
-  backdrop-filter: blur(7px) saturate(150%);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  -webkit-backdrop-filter: blur(14px) saturate(180%) contrast(105%);
+  backdrop-filter: blur(14px) saturate(180%) contrast(105%);
+  border: 1px solid rgba(255, 255, 255, 0.22);
   box-shadow:
-    0 8px 32px 0 rgba(0, 0, 0, 0.37),
-    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+    0 16px 40px -8px rgba(0, 0, 0, 0.55),
+    inset 0 1.5px 0 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 0 0 rgba(255, 255, 255, 0.12),
+    0 0 20px -2px rgba(34, 211, 238, 0.15);
+}
+
+/* Glass Refraction & Light Sheen Layer */
+.liquid-glass-sheen {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(
+    115deg,
+    transparent 15%,
+    rgba(255, 255, 255, 0.06) 30%,
+    rgba(255, 255, 255, 0.15) 38%,
+    rgba(255, 255, 255, 0.03) 46%,
+    transparent 60%
+  );
+  opacity: 0.85;
+}
+
+/* Subtle Caustic Background Reflection */
+.liquid-glass-reflection {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: radial-gradient(
+    ellipse at 50% -20%,
+    rgba(255, 255, 255, 0.25) 0%,
+    rgba(34, 211, 238, 0.08) 35%,
+    transparent 75%
+  );
+  mix-blend-mode: screen;
+}
+
+/* Fallback for browsers lacking backdrop-filter */
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .nav-island-container {
+    background: rgba(10, 14, 23, 0.95);
+  }
+  .nav-island-container.active-glass {
+    background: rgba(14, 20, 32, 0.98);
+  }
 }
 
 /* For magnetic links */

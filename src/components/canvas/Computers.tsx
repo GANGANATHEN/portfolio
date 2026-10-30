@@ -1,7 +1,8 @@
 "use client";
-import React, { Suspense, useEffect, useState, type FC } from "react";
+import React, { Suspense, useEffect, useRef, useState, type FC } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Preload, useGLTF } from "@react-three/drei";
+import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import CanvasLoader from "../Loader";
 
 type ComputersProps = {
@@ -105,6 +106,95 @@ class ComputersErrorBoundary extends React.Component<
   }
 }
 
+interface ControlledOrbitProps {
+  onDragChange: (dragging: boolean) => void;
+}
+
+const ControlledOrbit: FC<ControlledOrbitProps> = ({ onDragChange }) => {
+  const controlsRef = useRef<OrbitControlsImpl>(null);
+
+  useEffect(() => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+
+    const domElement = controls.domElement;
+    if (!domElement) return;
+
+    // Enforce touch-action: pan-y so mobile browsers natively handle vertical page scrolling
+    domElement.style.setProperty("touch-action", "pan-y", "important");
+
+    let startX = 0;
+    let startY = 0;
+    let isTouch = false;
+    let gestureLocked: "horizontal" | "vertical" | null = null;
+
+    const handlePointerDown = (e: PointerEvent) => {
+      if (e.pointerType === "touch") {
+        isTouch = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        gestureLocked = null;
+      } else {
+        isTouch = false;
+        controls.enableRotate = true;
+      }
+    };
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!isTouch || gestureLocked !== null) return;
+
+      const deltaX = Math.abs(e.clientX - startX);
+      const deltaY = Math.abs(e.clientY - startY);
+
+      // Threshold to detect user intent before locking
+      if (deltaX > 6 || deltaY > 6) {
+        if (deltaY > deltaX) {
+          // Predominantly vertical swipe -> allow page scrolling, disable 3D rotation
+          gestureLocked = "vertical";
+          controls.enableRotate = false;
+        } else {
+          // Predominantly horizontal swipe -> intentional 3D computer rotation
+          gestureLocked = "horizontal";
+          controls.enableRotate = true;
+        }
+      }
+    };
+
+    const handlePointerEnd = () => {
+      isTouch = false;
+      gestureLocked = null;
+      // Re-enable rotation for next interaction
+      controls.enableRotate = true;
+      onDragChange(false);
+    };
+
+    domElement.addEventListener("pointerdown", handlePointerDown, { passive: true });
+    window.addEventListener("pointermove", handlePointerMove, { passive: true });
+    window.addEventListener("pointerup", handlePointerEnd, { passive: true });
+    window.addEventListener("pointercancel", handlePointerEnd, { passive: true });
+
+    return () => {
+      domElement.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerEnd);
+      window.removeEventListener("pointercancel", handlePointerEnd);
+    };
+  }, [onDragChange]);
+
+  return (
+    <OrbitControls
+      ref={controlsRef}
+      enableZoom={false}
+      enablePan={false}
+      enableRotate={true}
+      onStart={() => onDragChange(true)}
+      onEnd={() => onDragChange(false)}
+      maxPolarAngle={Math.PI / 2}
+      minPolarAngle={Math.PI / 2}
+    />
+  );
+};
+
 const ComputersCanvas = () => {
   const [isMobile, setIsMobile] = useState(false);
   const [isTablet, setIsTablet] = useState(false);
@@ -148,22 +238,16 @@ const ComputersCanvas = () => {
         onCreated={(state) => {
           // Explicitly clear to dark background with alpha 0 to prevent mobile white flash
           state.gl.setClearColor(0x050816, 0);
+          state.gl.domElement.style.setProperty("touch-action", "pan-y", "important");
         }}
         style={{
           cursor: isHovered ? (isDragging ? "grabbing" : "grab") : "auto",
           background: "transparent",
+          touchAction: "pan-y",
         }}
       >
         <Suspense fallback={<CanvasLoader />}>
-          <OrbitControls
-            enableZoom={false}
-            enablePan={false}
-            enableRotate={true}
-            onStart={() => setIsDragging(true)}
-            onEnd={() => setIsDragging(false)}
-            maxPolarAngle={Math.PI / 2}
-            minPolarAngle={Math.PI / 2}
-          />
+          <ControlledOrbit onDragChange={setIsDragging} />
           <Computers
             isMobile={isMobile}
             isTablet={isTablet}

@@ -46,6 +46,10 @@ const BallCanvas = ({ icon }: { icon: string }) => {
       frameloop="demand"
       dpr={[1, 2]}
       gl={{ preserveDrawingBuffer: true }}
+      onCreated={(state) => {
+        state.gl.domElement.style.setProperty("touch-action", "pan-y", "important");
+      }}
+      style={{ touchAction: "pan-y" }}
     >
       <Suspense fallback={<CanvasLoader />}>
         <OrbitControls enableZoom={false} />

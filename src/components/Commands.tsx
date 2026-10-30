@@ -237,7 +237,7 @@ export default function Commands() {
   return (
     <section
       id="commands"
-      className="py-16 md:py-24 px-4 sm:px-6 md:px-12 lg:px-20 bg-[#07090e] border-y border-white/5 relative overflow-hidden"
+      className="py-16 md:py-24 px-4 sm:px-6 md:px-12 lg:px-20 bg-[#07090e] border-y border-white/5 relative overflow-hidden scroll-mt-24"
     >
       {/* Background Glow */}
       <div className="absolute top-0 right-1/4 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />

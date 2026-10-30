@@ -81,7 +81,7 @@ const About = () => {
   );
 
   return (
-    <section id="about" ref={containerRef} className="padding py-20">
+    <section id="about" ref={containerRef} className="padding py-20 scroll-mt-24">
       <div>
         <p className="about-heading text-secondary text-[14px] uppercase tracking-wider font-semibold">
           Introduction

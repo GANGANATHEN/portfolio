@@ -95,11 +95,13 @@ const EarthCanvas = () => {
         }}
         onCreated={(state) => {
           state.gl.setClearColor(0x020205, 0);
+          state.gl.domElement.style.setProperty("touch-action", "pan-y", "important");
         }}
         style={{
           width: "100%",
           height: "100%",
           cursor: isHovered ? (isDragging ? "grabbing" : "grab") : "auto",
+          touchAction: "pan-y",
         }}
       >
         <Suspense fallback={<CanvasLoader />}>
