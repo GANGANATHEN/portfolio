@@ -185,7 +185,7 @@ const Navbar = () => {
       <aside
         ref={sidePanelRef}
         aria-label="Site Navigation Panel"
-        className={`fixed top-0 left-0 bottom-0 z-50 w-72 sm:w-84 max-w-[85vw] h-full transform transition-transform duration-300 ease-out p-3 sm:p-4 pointer-events-auto select-none ${
+        className={`fixed top-0 left-0 bottom-0 z-50 w-72 sm:w-84 max-w-[85vw] h-dvh max-h-dvh flex flex-col min-h-0 min-w-0 p-3 sm:p-4 pointer-events-auto select-none transition-transform duration-300 ease-out ${
           isNavOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -195,10 +195,10 @@ const Navbar = () => {
           blur={28}
           opacity={0.76}
           distortionScale={-80}
-          className="w-full h-full p-5 sm:p-6 flex flex-col justify-between shadow-2xl border-white/20"
+          className="w-full h-full min-h-0 min-w-0 p-4 sm:p-5 flex flex-col justify-between shadow-2xl border-white/20 overflow-hidden"
         >
           {/* Panel Header */}
-          <div className="flex items-center justify-between pb-4 border-b border-white/10">
+          <div className="shrink-0 flex items-center justify-between pb-3 sm:pb-4 border-b border-white/10 select-none">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee] animate-pulse" />
               <h2 className="text-sm font-mono uppercase tracking-widest text-cyan-300 font-bold">
@@ -216,8 +216,12 @@ const Navbar = () => {
           </div>
 
           {/* Navigation Links */}
-          <nav className="flex-1 py-6 overflow-y-auto">
-            <ul className="flex flex-col gap-2">
+          <nav
+            className="flex-1 min-h-0 min-w-0 my-2 sm:my-3 py-1 overflow-y-auto overflow-x-hidden custom-scrollbar settings-scrollbar overscroll-contain pr-1"
+            data-lenis-prevent
+            data-lenis-prevent-touch
+          >
+            <ul className="flex flex-col gap-1.5 sm:gap-2">
               {navLinks.map((nav, idx) => {
                 const isCurrent = active.toLowerCase() === nav.title.toLowerCase();
                 return (
@@ -225,7 +229,7 @@ const Navbar = () => {
                     <a
                       href={`#${nav.id}`}
                       onClick={(e) => handleNavClick(e, nav.id, nav.title)}
-                      className={`group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 cursor-pointer text-sm sm:text-base font-semibold tracking-wide ${
+                      className={`group flex items-center justify-between px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-xl transition-all duration-200 cursor-pointer text-sm sm:text-base font-semibold tracking-wide ${
                         isCurrent
                           ? "bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 shadow-xs shadow-cyan-400/20"
                           : "text-gray-300 hover:text-white hover:bg-white/5 border border-transparent"
@@ -248,7 +252,7 @@ const Navbar = () => {
           </nav>
 
           {/* Panel Footer */}
-          <div className="pt-4 border-t border-white/10 flex flex-col gap-2 text-xs font-mono text-gray-400">
+          <div className="shrink-0 pt-3 sm:pt-4 border-t border-white/10 flex flex-col gap-1.5 sm:gap-2 text-xs font-mono text-gray-400 select-none">
             <div className="flex items-center justify-between">
               <span>Status</span>
               <span className="text-emerald-400 flex items-center gap-1">
