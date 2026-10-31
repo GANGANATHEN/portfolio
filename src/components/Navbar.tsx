@@ -1,120 +1,16 @@
 "use client";
-import React, { useRef, useState, useEffect, useCallback } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Play, Pause, Compass, X, Volume2, VolumeX } from "lucide-react";
+import { Compass, X } from "lucide-react";
 import { navLinks } from "@/constants";
 import { logo } from "../../public/assets";
 import GlassSurface from "./GlassSurface";
-
-// Web Audio Ambient Synthesizer Singleton to ensure single audio player across the application
-class AmbientAudioController {
-  private ctx: AudioContext | null = null;
-  private masterGain: GainNode | null = null;
-  private oscillators: OscillatorNode[] = [];
-  private isInitialized = false;
-
-  public init() {
-    if (this.isInitialized || typeof window === "undefined") return;
-    try {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (!AudioCtx) return;
-      this.ctx = new AudioCtx();
-
-      // Master gain node with gentle limiter
-      this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.setValueAtTime(0, this.ctx.currentTime);
-
-      // Lowpass filter for smooth ambient tone
-      const filter = this.ctx.createBiquadFilter();
-      filter.type = "lowpass";
-      filter.frequency.setValueAtTime(420, this.ctx.currentTime);
-      filter.Q.setValueAtTime(1.5, this.ctx.currentTime);
-
-      // Ethereal chord frequencies (Cmaj9 / Fmaj7 ambient voicing)
-      const frequencies = [130.81, 196.0, 246.94, 329.63, 392.0];
-
-      frequencies.forEach((freq, idx) => {
-        if (!this.ctx) return;
-        const osc = this.ctx.createOscillator();
-        const oscGain = this.ctx.createGain();
-
-        // Subtle detuning and sine/triangle mix
-        osc.type = idx % 2 === 0 ? "sine" : "triangle";
-        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
-        osc.detune.setValueAtTime((idx - 2) * 4, this.ctx.currentTime);
-
-        // Lower volume for individual harmonic layers
-        oscGain.gain.setValueAtTime(0.04 / (idx + 1), this.ctx.currentTime);
-
-        osc.connect(oscGain);
-        oscGain.connect(filter);
-        osc.start();
-        this.oscillators.push(osc);
-      });
-
-      filter.connect(this.masterGain);
-      this.masterGain.connect(this.ctx.destination);
-      this.isInitialized = true;
-    } catch (e) {
-      console.warn("Ambient audio initialization failed:", e);
-    }
-  }
-
-  public play(): boolean {
-    this.init();
-    if (!this.ctx || !this.masterGain) return false;
-    try {
-      if (this.ctx.state === "suspended") {
-        this.ctx.resume();
-      }
-      // Gentle fade in
-      this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
-      this.masterGain.gain.setTargetAtTime(0.12, this.ctx.currentTime, 0.4);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  public pause() {
-    if (!this.ctx || !this.masterGain) return;
-    try {
-      // Gentle fade out
-      this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
-      this.masterGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.3);
-      setTimeout(() => {
-        if (this.ctx && this.ctx.state === "running") {
-          this.ctx.suspend().catch(() => {});
-        }
-      }, 400);
-    } catch {}
-  }
-
-  public destroy() {
-    this.oscillators.forEach((osc) => {
-      try {
-        osc.stop();
-        osc.disconnect();
-      } catch {}
-    });
-    this.oscillators = [];
-    if (this.ctx) {
-      try {
-        this.ctx.close();
-      } catch {}
-      this.ctx = null;
-    }
-    this.isInitialized = false;
-  }
-}
-
-const ambientAudio = new AmbientAudioController();
+import MusicPlayer from "./MusicPlayer/MusicPlayer";
 
 const Navbar = () => {
   const [active, setActive] = useState("Home");
   const [isNavOpen, setIsNavOpen] = useState(false);
-  const [isPlayingMusic, setIsPlayingMusic] = useState(false);
   const sidePanelRef = useRef<HTMLDivElement | null>(null);
 
   // Active section tracking on window scroll
@@ -166,24 +62,6 @@ const Navbar = () => {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isNavOpen]);
-
-  // Audio play/pause toggle
-  const toggleMusic = useCallback(() => {
-    if (isPlayingMusic) {
-      ambientAudio.pause();
-      setIsPlayingMusic(false);
-    } else {
-      const ok = ambientAudio.play();
-      if (ok) setIsPlayingMusic(true);
-    }
-  }, [isPlayingMusic]);
-
-  // Clean up audio on unmount
-  useEffect(() => {
-    return () => {
-      ambientAudio.pause();
-    };
-  }, []);
 
   // Smooth Section Navigation
   const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, id: string, title: string) => {
@@ -260,60 +138,8 @@ const Navbar = () => {
             </div>
           </Link>
 
-          {/* Music Play / Pause Control (Far Right) */}
-          <div className="flex items-center">
-            <button
-              type="button"
-              onClick={toggleMusic}
-              aria-label={isPlayingMusic ? "Pause ambient sound" : "Play ambient sound"}
-              title={isPlayingMusic ? "Pause ambient audio" : "Play ambient audio"}
-              className={`group flex items-center gap-2 sm:gap-2.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-full border transition-all duration-300 cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-400 ${
-                isPlayingMusic
-                  ? "bg-cyan-500/20 border-cyan-400/60 shadow-[0_0_15px_rgba(34,211,238,0.3)] text-cyan-300"
-                  : "bg-black/40 border-white/15 hover:border-white/30 text-gray-300 hover:text-white shadow-sm"
-              }`}
-            >
-              <span className="p-1 rounded-full bg-white/10 group-hover:scale-110 transition-transform flex items-center justify-center">
-                {isPlayingMusic ? (
-                  <Pause className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-300 fill-current" />
-                ) : (
-                  <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-300 fill-current ml-0.5" />
-                )}
-              </span>
-
-              {/* Animated Equalizer Sound Wave Bars */}
-              <div className="flex items-end gap-1 h-4 w-5 sm:w-6" aria-hidden="true">
-                <span
-                  className={`w-1 rounded-full bg-cyan-400 transition-all duration-300 ${
-                    isPlayingMusic ? "animate-[soundWave_0.8s_ease-in-out_infinite_alternate]" : "h-1.5 opacity-40"
-                  }`}
-                  style={{ height: isPlayingMusic ? undefined : "4px" }}
-                />
-                <span
-                  className={`w-1 rounded-full bg-cyan-300 transition-all duration-300 ${
-                    isPlayingMusic ? "animate-[soundWave_1.2s_ease-in-out_infinite_alternate_0.2s]" : "h-2.5 opacity-40"
-                  }`}
-                  style={{ height: isPlayingMusic ? undefined : "8px" }}
-                />
-                <span
-                  className={`w-1 rounded-full bg-cyan-400 transition-all duration-300 ${
-                    isPlayingMusic ? "animate-[soundWave_0.9s_ease-in-out_infinite_alternate_0.4s]" : "h-1 opacity-40"
-                  }`}
-                  style={{ height: isPlayingMusic ? undefined : "3px" }}
-                />
-                <span
-                  className={`w-1 rounded-full bg-cyan-300 transition-all duration-300 ${
-                    isPlayingMusic ? "animate-[soundWave_1.1s_ease-in-out_infinite_alternate_0.1s]" : "h-2 opacity-40"
-                  }`}
-                  style={{ height: isPlayingMusic ? undefined : "6px" }}
-                />
-              </div>
-
-              <span className="hidden sm:inline-block text-xs font-mono font-medium tracking-wide">
-                {isPlayingMusic ? "Audio ON" : "Ambient"}
-              </span>
-            </button>
-          </div>
+          {/* Music Play / Pause Control & Responsive Popover (Far Right) */}
+          <MusicPlayer />
         </div>
       </header>
 

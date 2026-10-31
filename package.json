@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --import ./tests/register-loader.mjs --experimental-strip-types --test tests/security.test.mjs tests/notification-cooldown.test.mjs tests/otp-privacy-verification.test.mjs tests/advanced-chat.test.mjs tests/commands.test.mjs tests/message-retention-archive.test.mjs tests/visitor-deletion-metadata.test.mjs tests/single-active-session.test.mjs tests/production-readiness-audit.test.mjs tests/attachment-upload.test.mjs tests/account-management.test.mjs tests/admin-login-info.test.mjs tests/attachments-scroll-reply.test.mjs tests/bulk-delete-conversations.test.mjs",
+    "test": "node --import ./tests/register-loader.mjs --experimental-strip-types --test tests/security.test.mjs tests/notification-cooldown.test.mjs tests/otp-privacy-verification.test.mjs tests/advanced-chat.test.mjs tests/commands.test.mjs tests/message-retention-archive.test.mjs tests/visitor-deletion-metadata.test.mjs tests/single-active-session.test.mjs tests/production-readiness-audit.test.mjs tests/attachment-upload.test.mjs tests/account-management.test.mjs tests/admin-login-info.test.mjs tests/attachments-scroll-reply.test.mjs tests/bulk-delete-conversations.test.mjs tests/music-feature.test.mjs",
     "test:e2e": "node tests/live-e2e.mjs"
   },
   "dependencies": {
