@@ -1375,8 +1375,16 @@ export default function LiveChatWidget({
 
           {/* Profile / Account Settings Modal */}
           {showProfileModal && (
-            <div className="absolute inset-0 z-40 bg-black/85 backdrop-blur-xs p-4 flex flex-col justify-center items-center overflow-y-auto">
-              <div className="bg-[#17212b] border border-white/10 rounded-2xl p-5 w-full max-w-sm shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <div
+              className="absolute inset-0 z-40 bg-black/85 backdrop-blur-xs p-4 flex flex-col justify-center items-center overflow-y-auto"
+              data-lenis-prevent
+              data-lenis-prevent-touch
+            >
+              <div
+                className="bg-[#17212b] border border-white/10 rounded-2xl p-5 w-full max-w-sm shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto custom-scrollbar settings-scrollbar overscroll-contain"
+                data-lenis-prevent
+                data-lenis-prevent-touch
+              >
                 <div className="flex justify-between items-center border-b border-white/10 pb-2.5">
                   <div>
                     <h4 className="text-white font-bold text-sm">Account & Preferences</h4>

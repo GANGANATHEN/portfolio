@@ -1756,6 +1756,30 @@ export async function deleteConversationByAdmin(conversationId: string): Promise
   });
 }
 
+export async function deleteConversationsBulkByAdmin(conversationIds: string[]): Promise<{
+  deleted: string[];
+  failed: string[];
+}> {
+  const deleted: string[] = [];
+  const failed: string[] = [];
+
+  for (const id of conversationIds) {
+    try {
+      const ok = await deleteConversationByAdmin(id);
+      if (ok) {
+        deleted.push(id);
+      } else {
+        failed.push(id);
+      }
+    } catch (err) {
+      console.warn(`[Live Chat DB] Error deleting conversation ${id}:`, err);
+      failed.push(id);
+    }
+  }
+
+  return { deleted, failed };
+}
+
 export async function archiveConversationByAdmin(
   conversationId: string,
   isArchived: boolean,

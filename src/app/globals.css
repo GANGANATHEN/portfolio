@@ -50,10 +50,11 @@ body {
   display: none;
 }
 
-/* Custom Admin & Content Scrollbar */
+/* Custom Admin, Live Chat Settings & Content Scrollbar */
 .custom-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: rgba(34, 211, 238, 0.35) rgba(12, 16, 23, 0.6);
+  scrollbar-color: rgba(34, 211, 238, 0.45) rgba(14, 22, 33, 0.75);
+  -webkit-overflow-scrolling: touch;
 }
 
 .custom-scrollbar::-webkit-scrollbar {
@@ -62,24 +63,57 @@ body {
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: rgba(12, 16, 23, 0.7);
+  background: rgba(14, 22, 33, 0.75);
   border-radius: 9999px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(34, 211, 238, 0.3);
+  background: rgba(34, 211, 238, 0.45);
   border-radius: 9999px;
-  border: 1px solid rgba(34, 211, 238, 0.15);
+  border: 1px solid rgba(34, 211, 238, 0.2);
   transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(34, 211, 238, 0.6);
-  border-color: rgba(34, 211, 238, 0.4);
+  background: rgba(34, 211, 238, 0.8);
+  border-color: rgba(34, 211, 238, 0.5);
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:active {
-  background: rgba(34, 211, 238, 0.85);
+  background: rgba(34, 211, 238, 1);
+}
+
+/* Dedicated settings scrollbar for explicit customization */
+.settings-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(34, 211, 238, 0.45) rgba(14, 22, 33, 0.85);
+  -webkit-overflow-scrolling: touch;
+}
+
+.settings-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.settings-scrollbar::-webkit-scrollbar-track {
+  background: rgba(14, 22, 33, 0.85);
+  border-radius: 9999px;
+}
+
+.settings-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(34, 211, 238, 0.45);
+  border-radius: 9999px;
+  border: 1px solid rgba(34, 211, 238, 0.2);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.settings-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(34, 211, 238, 0.8);
+  border-color: rgba(34, 211, 238, 0.5);
+}
+
+.settings-scrollbar::-webkit-scrollbar-thumb:active {
+  background: rgba(34, 211, 238, 1);
 }
 
 /* my own colors */
@@ -106,17 +140,8 @@ body {
 }
 
 @layer utilities {
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 6px !important;
-  }
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent !important;
-  }
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background-color: var(
-      --color-primary
-    ) !important; /* CSS variable-a use pannunga */
-    border-radius: 20px !important;
+  .scrollbar-cyan {
+    scrollbar-color: rgba(34, 211, 238, 0.45) rgba(14, 22, 33, 0.75);
   }
 }
 

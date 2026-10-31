@@ -14,6 +14,7 @@ import {
   Copy,
   Check,
   CheckCheck,
+  CheckSquare,
   Download,
   FileDown,
   ArrowLeft,
@@ -170,6 +171,10 @@ export default function AdminInboxPage({
 
   // Modals & Viewers
   const [deleteConvModalOpen, setDeleteConvModalOpen] = useState(false);
+  const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
+  const [selectedConvIds, setSelectedConvIds] = useState<Set<string>>(new Set());
   const [targetDeleteMsgId, setTargetDeleteMsgId] = useState<string | null>(null);
   const [activeViewerAttachment, setActiveViewerAttachment] = useState<ViewerAttachment | null>(null);
   const [activeViewerList, setActiveViewerList] = useState<ViewerAttachment[]>([]);
@@ -938,6 +943,14 @@ export default function AdminInboxPage({
         // Optimistically remove from list
         setConversations((prev) => prev.filter((c) => c.id !== deletedId));
 
+        // Also remove from multi-select if present
+        setSelectedConvIds((prev) => {
+          if (!prev.has(deletedId)) return prev;
+          const next = new Set(prev);
+          next.delete(deletedId);
+          return next;
+        });
+
         // If the deleted conversation was the currently selected one, clear selection and URL hash
         if (selectedConvId === deletedId) {
           setSelectedConvId(null);
@@ -961,6 +974,115 @@ export default function AdminInboxPage({
       alert("Network error while deleting conversation.");
     }
   };
+
+  // Bulk selection controls
+  const handleToggleSelect = (convId: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
+    setSelectedConvIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(convId)) {
+        next.delete(convId);
+      } else {
+        next.add(convId);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    const allIds = new Set(conversations.map((c) => c.id));
+    setSelectedConvIds(allIds);
+  };
+
+  const handleClearSelection = () => {
+    setSelectedConvIds(new Set());
+  };
+
+  const handleBulkDeleteConversations = async () => {
+    if (selectedConvIds.size === 0 || isBulkDeleting) return;
+
+    setIsBulkDeleting(true);
+    setBulkDeleteError(null);
+
+    const idsToDelete = Array.from(selectedConvIds);
+
+    try {
+      const res = await fetch("/api/admin/live-chat/conversations", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationIds: idsToDelete }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok && data.success) {
+        const deletedIds: string[] = Array.isArray(data.deletedIds) ? data.deletedIds : idsToDelete;
+        const failedIds: string[] = Array.isArray(data.failedIds) ? data.failedIds : [];
+
+        // Optimistically remove successful ones from conversations list
+        setConversations((prev) => prev.filter((c) => !deletedIds.includes(c.id)));
+
+        // If the active conversation was deleted, clear active view
+        if (selectedConvId && deletedIds.includes(selectedConvId)) {
+          setSelectedConvId(null);
+          setActiveMessages([]);
+          setMobileView("list");
+          if (typeof window !== "undefined") {
+            window.history.replaceState(
+              null,
+              "",
+              `${window.location.pathname}${window.location.search}`
+            );
+          }
+        }
+
+        // Update selected set: remove deleted ones, keep failed ones
+        setSelectedConvIds((prev) => {
+          const next = new Set<string>();
+          for (const id of prev) {
+            if (!deletedIds.includes(id)) {
+              next.add(id);
+            }
+          }
+          return next;
+        });
+
+        if (failedIds.length > 0) {
+          setBulkDeleteError(
+            `Deleted ${deletedIds.length} conversation(s). Failed to delete ${failedIds.length} conversation(s). Failed items remain selected.`
+          );
+        } else {
+          setBulkDeleteModalOpen(false);
+        }
+
+        fetchConversations();
+      } else {
+        setBulkDeleteError(data.error || "Failed to delete selected conversations.");
+      }
+    } catch (err) {
+      console.warn("[Bulk Delete Error]:", err);
+      setBulkDeleteError("Network error while deleting conversations.");
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
+  // Synchronize selection state when conversations list changes or is filtered
+  useEffect(() => {
+    setSelectedConvIds((prev) => {
+      if (prev.size === 0) return prev;
+      const validIds = new Set(conversations.map((c) => c.id));
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (validIds.has(id)) {
+          next.add(id);
+        }
+      }
+      return next.size === prev.size ? prev : next;
+    });
+  }, [conversations]);
 
   // Export full PDF
   const handleExportPdf = async () => {
@@ -1004,6 +1126,7 @@ export default function AdminInboxPage({
 
   const renderConversationRow = (conv: ConversationItem) => {
     const isSelected = conv.id === selectedConvId;
+    const isBulkSelected = selectedConvIds.has(conv.id);
     const timeString = new Date(conv.lastMessageAt).toLocaleDateString([], {
       month: "short",
       day: "numeric",
@@ -1020,12 +1143,36 @@ export default function AdminInboxPage({
             selectConversation(conv.id);
           }
         }}
-        className={`p-3 transition-colors cursor-pointer flex gap-3 text-left group relative ${
+        className={`p-3 transition-colors cursor-pointer flex items-center gap-2.5 text-left group relative ${
           isSelected
             ? "bg-[#2b5278] text-white"
+            : isBulkSelected
+            ? "bg-cyan-950/40 text-white border-l-2 border-cyan-400"
             : "hover:bg-white/5 text-gray-300"
         }`}
       >
+        {/* Bulk Selection Checkbox */}
+        <div
+          className="shrink-0 flex items-center"
+          onClick={(e) => handleToggleSelect(conv.id, e)}
+        >
+          <button
+            type="button"
+            aria-label={`Select conversation with ${conv.visitorName || "visitor"}`}
+            aria-checked={isBulkSelected}
+            role="checkbox"
+            className={`w-4 h-4 rounded border flex items-center justify-center transition-all cursor-pointer ${
+              isBulkSelected
+                ? "bg-cyan-500 border-cyan-400 text-black shadow-xs shadow-cyan-500/50"
+                : selectedConvIds.size > 0
+                ? "border-white/40 hover:border-cyan-400 bg-white/5"
+                : "border-white/20 opacity-70 md:opacity-0 md:group-hover:opacity-100 hover:border-cyan-400 bg-white/5 focus:opacity-100"
+            }`}
+          >
+            {isBulkSelected && <Check className="w-3 h-3 stroke-[3]" />}
+          </button>
+        </div>
+
         {/* Visitor Avatar */}
         <div className="relative shrink-0">
           <div className="w-10 h-10 rounded-full bg-linear-to-tr from-cyan-600 to-blue-600 flex items-center justify-center font-bold text-white text-xs shadow-sm">
@@ -1324,16 +1471,79 @@ export default function AdminInboxPage({
         </div>
       )}
 
+      {/* Bulk Delete Conversations Modal */}
+      {bulkDeleteModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => {
+            if (!isBulkDeleting) {
+              setBulkDeleteModalOpen(false);
+              setBulkDeleteError(null);
+            }
+          }}
+        >
+          <div
+            className="bg-[#17212b] border border-red-500/30 rounded-2xl p-5 w-full max-w-sm text-center space-y-3.5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Trash2 className="w-8 h-8 text-red-400 mx-auto" />
+            <h3 className="text-base font-bold text-white">
+              Delete {selectedConvIds.size} Conversation{selectedConvIds.size === 1 ? "" : "s"}?
+            </h3>
+            <p className="text-xs text-gray-400 leading-relaxed">
+              Permanently delete the selected{" "}
+              <span className="text-white font-semibold">{selectedConvIds.size}</span>{" "}
+              conversation{selectedConvIds.size === 1 ? "" : "s"} and all associated message history? This action cannot be undone.
+            </p>
+
+            {bulkDeleteError && (
+              <div className="p-2.5 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 text-[11px] text-left">
+                {bulkDeleteError}
+              </div>
+            )}
+
+            <div className="flex justify-center gap-2 pt-2">
+              <button
+                type="button"
+                disabled={isBulkDeleting}
+                onClick={() => {
+                  setBulkDeleteModalOpen(false);
+                  setBulkDeleteError(null);
+                }}
+                className="px-3.5 py-1.5 rounded-xl text-gray-400 hover:text-white text-xs cursor-pointer disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isBulkDeleting || selectedConvIds.size === 0}
+                onClick={handleBulkDeleteConversations}
+                className="bg-red-500 hover:bg-red-400 text-white font-bold px-4 py-1.5 rounded-xl text-xs cursor-pointer shadow-md disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isBulkDeleting ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <span>Delete Selected ({selectedConvIds.size})</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main 3-Panel Layout Container */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex min-h-0 h-full overflow-hidden">
         {/* PANEL 1: CONVERSATIONS SIDEBAR */}
         <aside
-          className={`w-full md:w-80 lg:w-88 border-r border-white/10 bg-[#17212b] flex flex-col shrink-0 ${
+          className={`w-full md:w-80 lg:w-88 border-r border-white/10 bg-[#17212b] flex flex-col shrink-0 min-h-0 h-full ${
             mobileView === "chat" ? "hidden md:flex" : "flex"
           }`}
         >
           {/* Sidebar Top Header */}
-          <div className="p-3.5 border-b border-white/10 space-y-3">
+          <div className="p-3.5 border-b border-white/10 space-y-3 shrink-0">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-full bg-cyan-500/20 text-cyan-300 flex items-center justify-center font-bold text-xs">
@@ -1429,10 +1639,72 @@ export default function AdminInboxPage({
                 );
               })}
             </div>
+
+            {/* Quick Bulk Select trigger when 0 selected */}
+            {conversations.length > 0 && selectedConvIds.size === 0 && (
+              <div className="flex items-center justify-between pt-1 text-[10px] text-gray-400 select-none">
+                <span className="font-mono">
+                  {conversations.length} conversation{conversations.length === 1 ? "" : "s"}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSelectAll}
+                  className="hover:text-cyan-300 transition-colors font-mono cursor-pointer flex items-center gap-1 text-[10px]"
+                >
+                  <CheckSquare className="w-3 h-3" />
+                  <span>Select all</span>
+                </button>
+              </div>
+            )}
           </div>
 
+          {/* Multi-Select Action Bar (Active Selection) */}
+          {selectedConvIds.size > 0 && (
+            <div className="px-3.5 py-2 bg-[#101b26] border-b border-cyan-500/30 flex items-center justify-between text-xs animate-in fade-in duration-150 shrink-0 select-none">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-mono text-cyan-300 font-bold text-[11px] truncate">
+                  {selectedConvIds.size} of {conversations.length} selected
+                </span>
+                <button
+                  type="button"
+                  onClick={handleClearSelection}
+                  className="text-[11px] text-gray-400 hover:text-white underline cursor-pointer shrink-0"
+                >
+                  Clear
+                </button>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {selectedConvIds.size < conversations.length && (
+                  <button
+                    type="button"
+                    onClick={handleSelectAll}
+                    className="text-[10px] px-2 py-1 rounded-md bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white cursor-pointer font-mono"
+                  >
+                    Select All
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBulkDeleteError(null);
+                    setBulkDeleteModalOpen(true);
+                  }}
+                  disabled={isBulkDeleting}
+                  className="text-[11px] px-2.5 py-1 rounded-md bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 flex items-center gap-1 font-semibold cursor-pointer transition-colors shadow-xs"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>Delete ({selectedConvIds.size})</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Conversations Scroll List */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar divide-y divide-white/5">
+          <div
+            className="flex-1 min-h-0 overflow-y-auto custom-scrollbar settings-scrollbar overscroll-contain divide-y divide-white/5"
+            data-lenis-prevent
+            data-lenis-prevent-touch
+          >
             {apiError ? (
               <div className="p-6 text-center text-xs text-amber-300 space-y-2">
                 <AlertCircle className="w-5 h-5 mx-auto text-amber-400" />
@@ -2268,7 +2540,11 @@ export default function AdminInboxPage({
 
         {/* PANEL 3: VISITOR & CONVERSATION DETAILS (DESKTOP) */}
         {showDetailsPanel && activeConv && (
-          <aside className="hidden xl:flex w-72 lg:w-80 border-l border-white/10 bg-[#17212b] flex-col shrink-0 p-4 space-y-5 overflow-y-auto custom-scrollbar select-none">
+          <aside
+            className="hidden xl:flex w-72 lg:w-80 border-l border-white/10 bg-[#17212b] flex-col shrink-0 min-h-0 h-full p-4 space-y-5 overflow-y-auto custom-scrollbar settings-scrollbar overscroll-contain select-none"
+            data-lenis-prevent
+            data-lenis-prevent-touch
+          >
             <div className="flex items-center justify-between pb-3 border-b border-white/10">
               <h3 className="text-xs font-bold text-white tracking-wide">Visitor Information</h3>
               <button

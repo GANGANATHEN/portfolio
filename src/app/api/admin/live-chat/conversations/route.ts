@@ -4,6 +4,7 @@ import { validateAdminSession, createSessionRejectedResponse } from "@/lib/live-
 import {
   getAllConversationsForAdmin,
   deleteConversationByAdmin,
+  deleteConversationsBulkByAdmin,
   archiveConversationByAdmin,
   pinConversationByAdmin,
   DatabaseUnavailableError,
@@ -69,11 +70,35 @@ export async function DELETE(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => null);
+
+    // Support Bulk Deletion: { conversationIds: string[] }
+    if (body && Array.isArray(body.conversationIds)) {
+      const ids = (body.conversationIds as unknown[])
+        .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+        .map((id) => id.trim());
+
+      if (ids.length === 0) {
+        return NextResponse.json(
+          { error: "No valid conversation IDs provided for bulk deletion." },
+          { status: 400 },
+        );
+      }
+
+      const { deleted, failed } = await deleteConversationsBulkByAdmin(ids);
+      return NextResponse.json({
+        success: deleted.length > 0,
+        deletedIds: deleted,
+        failedIds: failed,
+        deletedCount: deleted.length,
+      });
+    }
+
+    // Single Conversation Deletion: { conversationId: string } or query param
     const conversationId = body?.conversationId || req.nextUrl.searchParams.get("conversationId");
 
     if (!conversationId || typeof conversationId !== "string") {
       return NextResponse.json(
-        { error: "Missing conversationId parameter." },
+        { error: "Missing conversationId or conversationIds parameter." },
         { status: 400 },
       );
     }
@@ -86,12 +111,25 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    return NextResponse.json({ success: true, conversationId });
+    return NextResponse.json({
+      success: true,
+      conversationId,
+      deletedIds: [conversationId],
+      failedIds: [],
+      deletedCount: 1,
+    });
   } catch (error) {
     console.error("[Admin Conversations DELETE Error]:", error);
+    const isDbUnavailable =
+      error instanceof DatabaseUnavailableError ||
+      (error instanceof Error && error.message.includes("Production Database Error"));
+
     return NextResponse.json(
-      { error: "Failed to delete conversation.", code: "INTERNAL_ERROR" },
-      { status: 500 },
+      {
+        error: "Failed to delete conversation.",
+        code: isDbUnavailable ? "DATABASE_UNAVAILABLE" : "INTERNAL_ERROR",
+      },
+      { status: isDbUnavailable ? 503 : 500 },
     );
   }
 }
