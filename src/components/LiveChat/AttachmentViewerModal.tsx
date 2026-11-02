@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useState, useCallback, useId } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useId } from "react";
 import {
   X,
   Download,
@@ -40,7 +40,10 @@ export default function AttachmentViewerModal({
   const titleId = useId();
 
   // Find index in active list
-  const activeList = allAttachments.length > 0 ? allAttachments : attachment ? [attachment] : [];
+  const activeList = useMemo(
+    () => (allAttachments.length > 0 ? allAttachments : attachment ? [attachment] : []),
+    [allAttachments, attachment]
+  );
   const currentIndex = activeList.findIndex((a) => a.id === attachment?.id);
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex >= 0 && currentIndex < activeList.length - 1;
@@ -151,7 +154,7 @@ export default function AttachmentViewerModal({
     >
       {/* Top Header Bar */}
       <header
-        className="w-full p-4 sm:px-6 flex items-center justify-between bg-black/40 border-b border-white/10 shrink-0 z-10"
+        className="w-full p-3 sm:p-4 sm:px-6 flex items-center justify-between bg-black/40 border-b border-white/10 shrink-0 z-10 pt-[max(0.75rem,env(safe-area-inset-top,0px))] pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 min-w-0 pr-4">
@@ -242,10 +245,10 @@ export default function AttachmentViewerModal({
               goToPrev();
             }}
             aria-label="Previous attachment"
-            className="absolute left-3 sm:left-6 top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full bg-black/60 hover:bg-cyan-500 hover:text-black border border-white/20 text-white flex items-center justify-center shadow-2xl transition-all cursor-pointer hover:scale-110 active:scale-95"
+            className="absolute left-2 sm:left-6 top-1/2 -translate-y-1/2 z-20 w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-black/60 hover:bg-cyan-500 hover:text-black border border-white/20 text-white flex items-center justify-center shadow-2xl transition-all cursor-pointer hover:scale-110 active:scale-95"
             title="Previous (Left Arrow)"
           >
-            <ChevronLeft className="w-6 h-6" />
+            <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
           </button>
         )}
 
@@ -258,10 +261,10 @@ export default function AttachmentViewerModal({
               goToNext();
             }}
             aria-label="Next attachment"
-            className="absolute right-3 sm:right-6 top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full bg-black/60 hover:bg-cyan-500 hover:text-black border border-white/20 text-white flex items-center justify-center shadow-2xl transition-all cursor-pointer hover:scale-110 active:scale-95"
+            className="absolute right-2 sm:right-6 top-1/2 -translate-y-1/2 z-20 w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-black/60 hover:bg-cyan-500 hover:text-black border border-white/20 text-white flex items-center justify-center shadow-2xl transition-all cursor-pointer hover:scale-110 active:scale-95"
             title="Next (Right Arrow)"
           >
-            <ChevronRight className="w-6 h-6" />
+            <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
           </button>
         )}
 

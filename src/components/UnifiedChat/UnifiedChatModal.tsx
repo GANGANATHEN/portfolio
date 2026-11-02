@@ -12,6 +12,7 @@ import AI_BOT_IMG from "../../../public/assets/bot/Ai-bot.svg";
 import LIVE_CHAT_ICON from "../../../public/assets/bot/Livechatbot.svg";
 import Chatbot from "@/components/Bot";
 import LiveChatWidget from "@/components/LiveChat/LiveChatWidget";
+import { useChatResponsiveViewport } from "./useChatResponsiveViewport";
 
 interface UnifiedChatModalProps {
   initialTab?: "chatbot" | "livechat";
@@ -25,6 +26,14 @@ export default function UnifiedChatModal({ initialTab = "chatbot" }: UnifiedChat
 
   const containerRef = useRef<HTMLDivElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
+
+  const {
+    visualHeight,
+    isKeyboardOpen,
+    keyboardHeight,
+    isMobile,
+    offsetTop,
+  } = useChatResponsiveViewport(isOpen, isFullscreen);
 
   // Keyboard navigation: Escape key handling
   useEffect(() => {
@@ -146,27 +155,50 @@ export default function UnifiedChatModal({ initialTab = "chatbot" }: UnifiedChat
           role="dialog"
           aria-modal="true"
           aria-label="Unified Portfolio Chat Window"
+          style={
+            isFullscreen
+              ? {
+                  height: visualHeight ? `${visualHeight}px` : "100dvh",
+                  maxHeight: visualHeight ? `${visualHeight}px` : "100dvh",
+                  top: offsetTop > 0 ? `${offsetTop}px` : 0,
+                  paddingTop: "env(safe-area-inset-top, 0px)",
+                  paddingBottom: isKeyboardOpen ? "0px" : "env(safe-area-inset-bottom, 0px)",
+                  paddingLeft: "env(safe-area-inset-left, 0px)",
+                  paddingRight: "env(safe-area-inset-right, 0px)",
+                }
+              : isMobile
+              ? {
+                  bottom: isKeyboardOpen
+                    ? `${keyboardHeight + 6}px`
+                    : "max(0.75rem, env(safe-area-inset-bottom, 0px))",
+                  height: isKeyboardOpen
+                    ? `${Math.min(480, Math.max(260, visualHeight - 16))}px`
+                    : "min(580px, calc(100dvh - 5.5rem))",
+                  maxHeight: `${Math.max(260, visualHeight - (isKeyboardOpen ? 12 : 24))}px`,
+                }
+              : undefined
+          }
           className={
             isFullscreen
-              ? "fixed inset-0 z-50 w-screen h-screen md:h-[100dvh] bg-[#0c1017] flex flex-col overflow-hidden text-white font-sans select-none animate-in fade-in duration-200"
-              : "fixed bottom-24 right-4 sm:right-8 w-[calc(100vw-2rem)] sm:w-96 md:w-[440px] h-[78vh] max-h-[640px] z-50 rounded-2xl border border-white/10 bg-[#0c1017] shadow-2xl flex flex-col overflow-hidden text-white font-sans select-none"
+              ? "fixed inset-0 z-50 w-full bg-[#0c1017] flex flex-col overflow-hidden text-white font-sans select-none animate-in fade-in duration-200"
+              : "fixed bottom-24 right-3 sm:right-6 md:right-8 left-3 sm:left-auto w-auto sm:w-96 md:w-[440px] max-w-[calc(100vw-1.5rem)] sm:max-w-none h-[78vh] max-h-[640px] z-50 rounded-2xl border border-white/10 bg-[#0c1017] shadow-2xl flex flex-col overflow-hidden text-white font-sans select-none"
           }
         >
           {/* Top Segmented Tab Header */}
-          <header className="px-3 py-2.5 sm:px-4 sm:py-3 border-b border-white/10 bg-[#121824] flex items-center justify-between select-none shadow-sm shrink-0">
+          <header className="px-2.5 py-2 sm:px-4 sm:py-3 border-b border-white/10 bg-[#121824] flex items-center justify-between select-none shadow-sm shrink-0 min-w-0">
             {/* Segmented Control Tabs */}
-            <div className="flex items-center bg-[#070a10] p-1 rounded-xl border border-white/5 text-xs font-mono">
+            <div className="flex items-center bg-[#070a10] p-1 rounded-xl border border-white/5 text-[11px] sm:text-xs font-mono min-w-0">
               <button
                 type="button"
                 onClick={() => setActiveTab("chatbot")}
-                className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ${
+                className={`px-2.5 sm:px-3 py-1.5 rounded-lg flex items-center gap-1 sm:gap-1.5 transition-all cursor-pointer ${
                   activeTab === "chatbot"
                     ? "bg-cyan-500 text-black font-bold shadow-md"
                     : "text-gray-400 hover:text-white"
                 }`}
               >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>AI Assistant</span>
+                <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">AI Assistant</span>
               </button>
 
               <button
@@ -175,14 +207,14 @@ export default function UnifiedChatModal({ initialTab = "chatbot" }: UnifiedChat
                   setActiveTab("livechat");
                   setLiveChatUnread(0);
                 }}
-                className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer relative ${
+                className={`px-2.5 sm:px-3 py-1.5 rounded-lg flex items-center gap-1 sm:gap-1.5 transition-all cursor-pointer relative ${
                   activeTab === "livechat"
                     ? "bg-cyan-500 text-black font-bold shadow-md"
                     : "text-gray-400 hover:text-white"
                 }`}
               >
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span>Live Chat</span>
+                <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Live Chat</span>
                 {liveChatUnread > 0 && activeTab !== "livechat" && (
                   <span className="w-2 h-2 rounded-full bg-pink-500 inline-block shrink-0" />
                 )}
@@ -190,7 +222,7 @@ export default function UnifiedChatModal({ initialTab = "chatbot" }: UnifiedChat
             </div>
 
             {/* Window Controls */}
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5 sm:gap-1 shrink-0 ml-1">
               <button
                 type="button"
                 onClick={() => setIsFullscreen(!isFullscreen)}
@@ -214,12 +246,12 @@ export default function UnifiedChatModal({ initialTab = "chatbot" }: UnifiedChat
           </header>
 
           {/* Unified Body Panels: Kept simultaneously mounted in DOM to prevent state reset */}
-          <div className="flex-1 w-full h-full relative overflow-hidden flex flex-col">
-            <div className={activeTab === "chatbot" ? "flex-1 w-full h-full flex flex-col min-h-0" : "hidden"}>
+          <div className="flex-1 w-full relative overflow-hidden flex flex-col min-h-0 min-w-0">
+            <div className={activeTab === "chatbot" ? "flex-1 w-full h-full flex flex-col min-h-0 min-w-0" : "hidden"}>
               <Chatbot isEmbedded isFullscreen={isFullscreen} />
             </div>
 
-            <div className={activeTab === "livechat" ? "flex-1 w-full h-full flex flex-col min-h-0" : "hidden"}>
+            <div className={activeTab === "livechat" ? "flex-1 w-full h-full flex flex-col min-h-0 min-w-0" : "hidden"}>
               <LiveChatWidget
                 isEmbedded
                 isFullscreen={isFullscreen}

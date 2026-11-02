@@ -37,6 +37,7 @@ import LIVE_CHAT_ICON from "../../../public/assets/bot/Livechatbot.svg";
 import TelegramEmojiPicker from "./TelegramEmojiPicker";
 import AttachmentViewerModal, { type ViewerAttachment } from "./AttachmentViewerModal";
 import { useVoiceRecording } from "./useVoiceRecording";
+import { useChatResponsiveViewport } from "../UnifiedChat/useChatResponsiveViewport";
 
 interface AttachmentItem {
   id: string;
@@ -225,6 +226,21 @@ export default function LiveChatWidget({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
   const chatRef = useRef<HTMLDivElement>(null);
+
+  const {
+    visualHeight,
+    isKeyboardOpen,
+    keyboardHeight,
+    isMobile,
+    offsetTop,
+  } = useChatResponsiveViewport(isOpen, isFullscreen);
+
+  // Auto-scroll to latest message when mobile keyboard opens
+  useEffect(() => {
+    if (isKeyboardOpen && messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [isKeyboardOpen]);
 
   // Setup Voice Recording hook
   const {
@@ -1227,40 +1243,65 @@ export default function LiveChatWidget({
           data-lenis-prevent-touch
           role={isEmbedded ? "region" : "dialog"}
           aria-label="Telegram Live Chat"
+          style={
+            !isEmbedded
+              ? isFullscreen
+                ? {
+                    height: visualHeight ? `${visualHeight}px` : "100dvh",
+                    maxHeight: visualHeight ? `${visualHeight}px` : "100dvh",
+                    top: offsetTop > 0 ? `${offsetTop}px` : 0,
+                    paddingTop: "env(safe-area-inset-top, 0px)",
+                    paddingBottom: isKeyboardOpen ? "0px" : "env(safe-area-inset-bottom, 0px)",
+                    paddingLeft: "env(safe-area-inset-left, 0px)",
+                    paddingRight: "env(safe-area-inset-right, 0px)",
+                  }
+                : isMobile
+                ? {
+                    bottom: isKeyboardOpen
+                      ? `${keyboardHeight + 6}px`
+                      : "max(0.75rem, env(safe-area-inset-bottom, 0px))",
+                    height: isKeyboardOpen
+                      ? `${Math.min(480, Math.max(260, visualHeight - 16))}px`
+                      : "min(580px, calc(100dvh - 5.5rem))",
+                    maxHeight: `${Math.max(260, visualHeight - (isKeyboardOpen ? 12 : 24))}px`,
+                  }
+                : undefined
+              : undefined
+          }
           className={
             isEmbedded
-              ? "flex-1 w-full h-full bg-[#0e1621] flex flex-col overflow-hidden text-white font-sans select-none"
+              ? "flex-1 w-full h-full bg-[#0e1621] flex flex-col overflow-hidden text-white font-sans select-none min-h-0 min-w-0"
               : isFullscreen
-              ? "fixed inset-0 z-50 w-screen h-screen md:h-[100dvh] bg-[#0e1621] shadow-2xl flex flex-col overflow-hidden text-white font-sans select-none animate-in fade-in duration-200"
-              : "fixed bottom-24 right-4 sm:right-24 w-[calc(100vw-2rem)] sm:w-96 md:w-[420px] h-[78vh] max-h-[640px] z-50 rounded-2xl border border-white/10 bg-[#0e1621] shadow-2xl flex flex-col overflow-hidden text-white font-sans select-none"
+              ? "fixed inset-0 z-50 w-full bg-[#0e1621] shadow-2xl flex flex-col overflow-hidden text-white font-sans select-none animate-in fade-in duration-200"
+              : "fixed bottom-20 sm:bottom-24 left-3 right-3 sm:left-auto sm:right-6 md:right-8 w-auto sm:w-96 md:w-[420px] max-w-[calc(100vw-1.5rem)] sm:max-w-none h-[78vh] max-h-[640px] z-50 rounded-2xl border border-white/10 bg-[#0e1621] shadow-2xl flex flex-col overflow-hidden text-white font-sans select-none"
           }
         >
           {/* Telegram Header */}
-          <header className="px-4 py-3 border-b border-white/10 bg-[#17212b] flex justify-between items-center select-none shadow-sm shrink-0">
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <div className="w-10 h-10 rounded-full bg-linear-to-tr from-cyan-600 to-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-md">
+          <header className="px-3 sm:px-4 py-2.5 sm:py-3 border-b border-white/10 bg-[#17212b] flex justify-between items-center select-none shadow-sm shrink-0 min-w-0">
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+              <div className="relative shrink-0">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-linear-to-tr from-cyan-600 to-blue-600 flex items-center justify-center text-white font-bold text-xs sm:text-sm shadow-md">
                   G
                 </div>
                 <span
-                  className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#17212b] ${
+                  className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-[#17212b] ${
                     isOnline ? "bg-emerald-400" : "bg-gray-400"
                   }`}
                 />
               </div>
 
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <h3 className="text-sm font-semibold text-white tracking-tight">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <h3 className="text-xs sm:text-sm font-semibold text-white tracking-tight truncate">
                     Ganganathan
                   </h3>
                   {profile.emailVerified && (
-                    <span title="Verified Session">
+                    <span title="Verified Session" className="shrink-0">
                       <ShieldCheck className="w-3.5 h-3.5 text-cyan-400 inline" />
                     </span>
                   )}
                 </div>
-                <p className="text-[11px] text-gray-400">
+                <p className="text-[10px] sm:text-[11px] text-gray-400 truncate">
                   {connectionStatus === "reconnecting" ? (
                     <span className="text-amber-400 flex items-center gap-1 font-mono">
                       <RefreshCw className="w-2.5 h-2.5 animate-spin" /> {connectionErrorMsg || "Connecting..."}
@@ -1276,7 +1317,7 @@ export default function LiveChatWidget({
               </div>
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5 sm:gap-1 shrink-0 ml-1">
               <button
                 type="button"
                 onClick={() => {
@@ -1847,7 +1888,8 @@ export default function LiveChatWidget({
             onScroll={handleContainerScroll}
             onWheel={handleWheel}
             data-lenis-prevent
-            className="custom-scrollbar flex-1 min-h-0 overscroll-contain overflow-y-auto px-3 py-4 space-y-2.5 bg-[#0e1621]"
+            data-lenis-prevent-touch
+            className="custom-scrollbar flex-1 min-h-0 min-w-0 overscroll-contain overflow-y-auto px-2.5 sm:px-3 py-3 sm:py-4 space-y-2.5 bg-[#0e1621]"
           >
             {sessionSupersededMsg && (
               <div className="bg-red-950/90 border border-red-500/50 text-red-200 text-xs p-3 rounded-xl flex items-center justify-between gap-2 shadow-lg mb-3">
@@ -1969,7 +2011,7 @@ export default function LiveChatWidget({
 
                       {/* Telegram Message Bubble */}
                       <div
-                        className={`relative p-3 rounded-2xl text-xs sm:text-[13px] max-w-[85%] sm:max-w-[80%] break-words leading-relaxed shadow-sm ${
+                        className={`relative p-2.5 sm:p-3 rounded-2xl text-xs sm:text-[13px] max-w-[88%] sm:max-w-[80%] [overflow-wrap:anywhere] break-words min-w-0 leading-relaxed shadow-sm ${
                           isVisitor
                             ? "bg-[#1c5b78] text-white rounded-br-xs"
                             : "bg-[#182533] text-gray-100 rounded-bl-xs border border-white/5"
@@ -2333,14 +2375,14 @@ export default function LiveChatWidget({
 
                       {/* Quick Telegram Emoji Reactions Bar */}
                       {activeReactionMsgId === m.id && (
-                        <div className="relative mt-1 z-30">
-                          <div className="flex items-center gap-1 p-1 bg-[#17212b] border border-white/15 rounded-full shadow-2xl animate-in fade-in zoom-in-95 duration-100">
+                        <div className="relative mt-1 z-30 max-w-full">
+                          <div className="flex items-center gap-1 p-1 bg-[#17212b] border border-white/15 rounded-full shadow-2xl animate-in fade-in zoom-in-95 duration-100 max-w-full overflow-x-auto no-scrollbar">
                             {QUICK_REACTIONS.map((emoji) => (
                               <button
                                 key={emoji}
                                 type="button"
                                 onClick={() => handleToggleReaction(m.id, emoji)}
-                                className="w-7 h-7 rounded-full flex items-center justify-center text-base hover:scale-130 transition-transform cursor-pointer hover:bg-white/10"
+                                className="w-7 h-7 rounded-full flex items-center justify-center text-base hover:scale-130 transition-transform cursor-pointer hover:bg-white/10 shrink-0"
                                 title={`React with ${emoji}`}
                               >
                                 {emoji}
@@ -2354,7 +2396,7 @@ export default function LiveChatWidget({
                                 setActiveReactionMsgId(null);
                                 setShowFullPickerForMsgId(m.id);
                               }}
-                              className="w-7 h-7 rounded-full flex items-center justify-center text-gray-400 hover:text-cyan-300 hover:bg-white/10 transition-colors cursor-pointer"
+                              className="w-7 h-7 rounded-full flex items-center justify-center text-gray-400 hover:text-cyan-300 hover:bg-white/10 transition-colors cursor-pointer shrink-0"
                               title="More emojis"
                             >
                               <Smile className="w-4 h-4" />
@@ -2365,7 +2407,7 @@ export default function LiveChatWidget({
 
                       {/* Full Categorized Emoji Picker Drawer for Message Reaction */}
                       {showFullPickerForMsgId === m.id && (
-                        <div className="relative mt-2 z-40">
+                        <div className="relative mt-2 z-40 max-w-full">
                           <TelegramEmojiPicker
                             mode="reaction"
                             currentReactions={Object.keys(m.reactions || {})}
@@ -2383,10 +2425,10 @@ export default function LiveChatWidget({
           </section>
 
           {/* Telegram Composer Footer */}
-          <footer className="p-3 border-t border-white/10 bg-[#17212b] space-y-2 relative">
+          <footer className="p-2 sm:p-3 border-t border-white/10 bg-[#17212b] space-y-2 relative shrink-0 min-w-0">
             {/* Full Emoji Picker Drawer for Composer */}
             {showComposerEmojiPicker && (
-              <div className="absolute bottom-16 left-3 z-50">
+              <div className="absolute bottom-14 sm:bottom-16 left-2 sm:left-3 right-2 sm:right-auto z-50">
                 <TelegramEmojiPicker
                   mode="composer"
                   onSelect={(emoji) => {
@@ -2400,8 +2442,8 @@ export default function LiveChatWidget({
 
             {/* Quoting Preview Banner */}
             {replyingTo && (
-              <div className="flex items-center justify-between bg-[#0e1621] border-l-3 border-cyan-400 rounded-r-xl px-3 py-1.5 text-xs">
-                <div className="flex items-center gap-1.5 truncate">
+              <div className="flex items-center justify-between bg-[#0e1621] border-l-3 border-cyan-400 rounded-r-xl px-2.5 sm:px-3 py-1.5 text-xs min-w-0">
+                <div className="flex items-center gap-1.5 truncate min-w-0 flex-1">
                   <Reply className="w-3.5 h-3.5 text-cyan-400 shrink-0 rotate-180" />
                   <span className="font-semibold text-cyan-300 shrink-0">
                     {replyingTo.senderType === "owner" ? "Ganganathan" : "You"}:
@@ -2413,7 +2455,7 @@ export default function LiveChatWidget({
                 <button
                   type="button"
                   onClick={() => setReplyingTo(null)}
-                  className="text-gray-400 hover:text-white p-0.5 ml-2 cursor-pointer"
+                  className="text-gray-400 hover:text-white p-0.5 ml-2 cursor-pointer shrink-0"
                   title="Cancel reply"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -2423,20 +2465,20 @@ export default function LiveChatWidget({
 
             {/* Pending Attachments List */}
             {pendingAttachments.length > 0 && (
-              <div className="flex gap-1.5 flex-wrap">
+              <div className="flex gap-1.5 flex-wrap min-w-0">
                 {pendingAttachments.map((att) => (
                   <div
                     key={att.id}
-                    className="flex items-center gap-1.5 bg-[#0e1621] border border-cyan-500/30 text-cyan-200 text-xs px-2.5 py-1 rounded-lg"
+                    className="flex items-center gap-1.5 bg-[#0e1621] border border-cyan-500/30 text-cyan-200 text-xs px-2 sm:px-2.5 py-1 rounded-lg min-w-0 max-w-full"
                   >
                     <Paperclip className="w-3 h-3 text-cyan-400 shrink-0" />
-                    <span className="truncate max-w-[130px] font-mono">{att.fileName}</span>
+                    <span className="truncate max-w-[100px] sm:max-w-[130px] font-mono">{att.fileName}</span>
                     <button
                       type="button"
                       onClick={() =>
                         setPendingAttachments((prev) => prev.filter((a) => a.id !== att.id))
                       }
-                      className="text-gray-400 hover:text-white cursor-pointer ml-1"
+                      className="text-gray-400 hover:text-white cursor-pointer ml-1 shrink-0"
                       title="Remove attachment"
                     >
                       <X className="w-3 h-3" />
@@ -2448,29 +2490,29 @@ export default function LiveChatWidget({
 
             {/* Uploading Status / Error */}
             {isUploadingAttachment && (
-              <p className="text-[10px] text-cyan-300 font-mono animate-pulse flex items-center gap-1">
-                <RefreshCw className="w-3 h-3 animate-spin" />
-                <span>Uploading attachment...</span>
+              <p className="text-[10px] text-cyan-300 font-mono animate-pulse flex items-center gap-1 min-w-0">
+                <RefreshCw className="w-3 h-3 animate-spin shrink-0" />
+                <span className="truncate">Uploading attachment...</span>
               </p>
             )}
             {uploadError && (
-              <p className="text-[10px] text-red-400 font-mono flex items-center gap-1">
-                <AlertCircle className="w-3 h-3" />
-                <span>{uploadError}</span>
+              <p className="text-[10px] text-red-400 font-mono flex items-center gap-1 min-w-0">
+                <AlertCircle className="w-3 h-3 shrink-0" />
+                <span className="truncate">{uploadError}</span>
               </p>
             )}
 
             {/* Voice Error Notification */}
             {voiceError && (
-              <div className="bg-red-500/15 border border-red-500/30 rounded-xl px-3 py-1.5 flex items-center justify-between text-xs text-red-300 font-mono">
-                <span className="flex items-center gap-1.5 truncate">
+              <div className="bg-red-500/15 border border-red-500/30 rounded-xl px-2.5 sm:px-3 py-1.5 flex items-center justify-between text-xs text-red-300 font-mono min-w-0">
+                <span className="flex items-center gap-1.5 truncate min-w-0">
                   <AlertCircle className="w-3.5 h-3.5 shrink-0 text-red-400" />
                   <span className="truncate">{voiceError}</span>
                 </span>
                 <button
                   type="button"
                   onClick={clearVoiceError}
-                  className="text-red-300 hover:text-white p-0.5 ml-2 cursor-pointer"
+                  className="text-red-300 hover:text-white p-0.5 ml-2 cursor-pointer shrink-0"
                   title="Dismiss error"
                 >
                   <X className="w-3 h-3" />
@@ -2480,16 +2522,16 @@ export default function LiveChatWidget({
 
             {/* Active Voice Recording Status Bar */}
             {isRecording ? (
-              <div className="flex items-center justify-between bg-red-500/10 border border-red-500/30 rounded-2xl p-2.5 px-4 animate-pulse">
-                <div className="flex items-center gap-2 text-xs font-mono text-red-400">
-                  <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
-                  <span className="font-bold">Listening...</span>
-                  <span className="text-gray-400">
+              <div className="flex items-center justify-between bg-red-500/10 border border-red-500/30 rounded-2xl p-2 px-3 sm:p-2.5 sm:px-4 animate-pulse min-w-0">
+                <div className="flex items-center gap-2 text-xs font-mono text-red-400 min-w-0">
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping shrink-0" />
+                  <span className="font-bold truncate">Listening...</span>
+                  <span className="text-gray-400 shrink-0">
                     {Math.floor(recordingDuration / 60)}:
                     {String(recordingDuration % 60).padStart(2, "0")}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                   <button
                     type="button"
                     onClick={cancelRecording}
@@ -2502,7 +2544,7 @@ export default function LiveChatWidget({
                   <button
                     type="button"
                     onClick={stopRecording}
-                    className="p-1.5 px-3 rounded-lg bg-red-500 hover:bg-red-600 text-white font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-lg"
+                    className="p-1.5 px-2.5 sm:px-3 rounded-lg bg-red-500 hover:bg-red-600 text-white font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-lg"
                     title="Finish voice input"
                   >
                     <Square className="w-3 h-3 fill-current" />
@@ -2512,7 +2554,7 @@ export default function LiveChatWidget({
               </div>
             ) : (
               /* Input Form Row */
-              <form onSubmit={handleSendMessage} className="flex gap-2 items-center">
+              <form onSubmit={handleSendMessage} className="flex gap-1.5 sm:gap-2 items-center min-w-0 w-full">
                 {/* Hidden file input */}
                 <input
                   ref={fileInputRef}
@@ -2528,24 +2570,24 @@ export default function LiveChatWidget({
                   type="button"
                   disabled={isUploadingAttachment || isSending}
                   onClick={() => fileInputRef.current?.click()}
-                  className="p-2 rounded-xl text-gray-400 hover:text-cyan-300 hover:bg-white/5 transition-colors disabled:opacity-40 cursor-pointer shrink-0"
+                  className="p-1.5 sm:p-2 rounded-xl text-gray-400 hover:text-cyan-300 hover:bg-white/5 transition-colors disabled:opacity-40 cursor-pointer shrink-0"
                   title="Attach file, image, or video"
                 >
-                  <Paperclip className="w-5 h-5" />
+                  <Paperclip className="w-4 h-4 sm:w-5 sm:h-5" />
                 </button>
 
                 {/* Emoji Picker Button */}
                 <button
                   type="button"
                   onClick={() => setShowComposerEmojiPicker(!showComposerEmojiPicker)}
-                  className={`p-2 rounded-xl transition-colors cursor-pointer shrink-0 ${
+                  className={`p-1.5 sm:p-2 rounded-xl transition-colors cursor-pointer shrink-0 ${
                     showComposerEmojiPicker
                       ? "text-cyan-400 bg-white/10"
                       : "text-gray-400 hover:text-yellow-400 hover:bg-white/5"
                   }`}
                   title="Insert emoji"
                 >
-                  <Smile className="w-5 h-5" />
+                  <Smile className="w-4 h-4 sm:w-5 sm:h-5" />
                 </button>
 
                 {/* Voice Input Button */}
@@ -2553,10 +2595,10 @@ export default function LiveChatWidget({
                   type="button"
                   onClick={startRecording}
                   disabled={isSending || isUploadingAttachment}
-                  className="p-2 rounded-xl text-gray-400 hover:text-cyan-300 hover:bg-white/5 transition-colors disabled:opacity-40 cursor-pointer shrink-0"
+                  className="p-1.5 sm:p-2 rounded-xl text-gray-400 hover:text-cyan-300 hover:bg-white/5 transition-colors disabled:opacity-40 cursor-pointer shrink-0"
                   title="Voice message (Speech Input)"
                 >
-                  <Mic className="w-5 h-5" />
+                  <Mic className="w-4 h-4 sm:w-5 sm:h-5" />
                 </button>
 
                 {/* Message Text Input */}
@@ -2571,20 +2613,20 @@ export default function LiveChatWidget({
                       ? "Add a caption..."
                       : "Write a message..."
                   }
-                  className="flex-1 bg-[#0e1621] rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white placeholder:text-gray-500 outline-none border border-white/10 focus:border-cyan-400 transition-colors disabled:opacity-50"
+                  className="flex-1 min-w-0 bg-[#0e1621] rounded-xl px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm text-white placeholder:text-gray-500 outline-none border border-white/10 focus:border-cyan-400 transition-colors disabled:opacity-50"
                 />
 
                 {/* Telegram Send Button */}
                 <button
                   type="submit"
                   disabled={isSending || (!inputValue.trim() && pendingAttachments.length === 0)}
-                  className="w-9 h-9 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed shrink-0 cursor-pointer shadow-md"
+                  className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed shrink-0 cursor-pointer shadow-md"
                   title="Send message"
                 >
                   {isSending ? (
-                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <RefreshCw className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" />
                   ) : (
-                    <Send className="w-4 h-4 ml-0.5" />
+                    <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 ml-0.5" />
                   )}
                 </button>
               </form>

@@ -14,6 +14,7 @@ import {
   Send,
 } from "lucide-react";
 import { useVoiceRecording } from "./LiveChat/useVoiceRecording";
+import { useChatResponsiveViewport } from "./UnifiedChat/useChatResponsiveViewport";
 
 interface Message {
   role: "user" | "bot";
@@ -70,6 +71,14 @@ const Chatbot = ({
   const launcherRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const {
+    visualHeight,
+    isKeyboardOpen,
+    keyboardHeight,
+    isMobile,
+    offsetTop,
+  } = useChatResponsiveViewport(isOpen, isFullscreen);
+
   // Setup Voice Recording hook
   const {
     isRecording,
@@ -85,9 +94,9 @@ const Chatbot = ({
     },
   });
 
-  // Animation for Chat Window when opening
+  // Animation for Chat Window when opening (standalone mode only)
   useGSAP(() => {
-    if (isOpen && chatRef.current && !isFullscreen) {
+    if (isOpen && chatRef.current && !isFullscreen && !isEmbedded) {
       gsap.fromTo(
         chatRef.current,
         { y: 20, opacity: 0, scale: 0.95 },
@@ -95,7 +104,7 @@ const Chatbot = ({
       );
       setTimeout(() => inputRef.current?.focus(), 120);
     }
-  }, [isOpen, isFullscreen]);
+  }, [isOpen, isFullscreen, isEmbedded]);
 
   // Auto-scroll to bottom of messages
   useEffect(() => {
@@ -103,6 +112,13 @@ const Chatbot = ({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isLoading]);
+
+  // Auto-scroll when keyboard opens on mobile
+  useEffect(() => {
+    if (isKeyboardOpen && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [isKeyboardOpen]);
 
   // Handle Escape key: cancel voice -> exit fullscreen -> close chat
   useEffect(() => {
@@ -127,7 +143,7 @@ const Chatbot = ({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, isFullscreen, isRecording, cancelRecording, handleClose]);
+  }, [isOpen, isFullscreen, isRecording, cancelRecording, handleClose, setIsFullscreen]);
 
   // Outside-click-to-close behavior in floating mode
   useEffect(() => {
@@ -289,30 +305,55 @@ const Chatbot = ({
           role={isEmbedded ? "region" : "dialog"}
           aria-modal={isEmbedded ? undefined : "true"}
           aria-label="Ganganathan AI Assistant"
+          style={
+            !isEmbedded
+              ? isFullscreen
+                ? {
+                    height: visualHeight ? `${visualHeight}px` : "100dvh",
+                    maxHeight: visualHeight ? `${visualHeight}px` : "100dvh",
+                    top: offsetTop > 0 ? `${offsetTop}px` : 0,
+                    paddingTop: "env(safe-area-inset-top, 0px)",
+                    paddingBottom: isKeyboardOpen ? "0px" : "env(safe-area-inset-bottom, 0px)",
+                    paddingLeft: "env(safe-area-inset-left, 0px)",
+                    paddingRight: "env(safe-area-inset-right, 0px)",
+                  }
+                : isMobile
+                ? {
+                    bottom: isKeyboardOpen
+                      ? `${keyboardHeight + 6}px`
+                      : "max(0.75rem, env(safe-area-inset-bottom, 0px))",
+                    height: isKeyboardOpen
+                      ? `${Math.min(480, Math.max(260, visualHeight - 16))}px`
+                      : "min(580px, calc(100dvh - 5.5rem))",
+                    maxHeight: `${Math.max(260, visualHeight - (isKeyboardOpen ? 12 : 24))}px`,
+                  }
+                : undefined
+              : undefined
+          }
           className={
             isEmbedded
-              ? "flex-1 w-full h-full bg-[#0a0a0c] flex flex-col overflow-hidden"
+              ? "flex-1 w-full h-full bg-[#0a0a0c] flex flex-col overflow-hidden min-h-0 min-w-0"
               : isFullscreen
-              ? "fixed inset-0 z-50 w-screen h-screen md:h-[100dvh] bg-[#0a0a0c] flex flex-col overflow-hidden animate-in fade-in duration-200"
-              : "fixed bottom-24 right-4 sm:right-8 w-[calc(100vw-2rem)] sm:w-88 md:w-96 h-[72vh] max-h-[580px] z-50 rounded-3xl border border-white/10 bg-[#0a0a0c]/98 backdrop-blur-2xl shadow-2xl flex flex-col overflow-hidden"
+              ? "fixed inset-0 z-50 w-full bg-[#0a0a0c] flex flex-col overflow-hidden text-white animate-in fade-in duration-200"
+              : "fixed bottom-20 sm:bottom-24 left-3 right-3 sm:left-auto sm:right-8 w-auto sm:w-88 md:w-96 max-w-[calc(100vw-1.5rem)] sm:max-w-none h-[72vh] max-h-[580px] z-50 rounded-3xl border border-white/10 bg-[#0a0a0c]/98 backdrop-blur-2xl shadow-2xl flex flex-col overflow-hidden"
           }
         >
           {/* Header */}
-          <header className="p-3 sm:p-3.5 border-b border-white/10 bg-white/5 flex justify-between items-center select-none shrink-0">
-            <div className="flex items-center gap-2.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-              <div>
-                <span className="text-[10px] uppercase tracking-widest text-cyan-400 font-mono block font-bold">
+          <header className="p-2.5 sm:p-3.5 border-b border-white/10 bg-white/5 flex justify-between items-center select-none shrink-0 min-w-0">
+            <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+              <div className="min-w-0">
+                <span className="text-[10px] uppercase tracking-widest text-cyan-400 font-mono block font-bold truncate">
                   AI ASSISTANT
                 </span>
-                <span className="text-xs font-semibold text-white">
+                <span className="text-xs font-semibold text-white truncate block">
                   {botNickname}
                 </span>
               </div>
             </div>
 
             {!isEmbedded && (
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 shrink-0 ml-1">
                 {/* Fullscreen / Minimize Toggle Button */}
                 <button
                   type="button"
@@ -344,15 +385,15 @@ const Chatbot = ({
 
           {/* Voice Error Notification Banner */}
           {voiceError && (
-            <div className="bg-red-500/15 border-b border-red-500/30 px-3 py-2 flex items-center justify-between text-xs text-red-300 font-mono">
-              <span className="flex items-center gap-1.5 truncate">
+            <div className="bg-red-500/15 border-b border-red-500/30 px-3 py-2 flex items-center justify-between text-xs text-red-300 font-mono shrink-0 min-w-0">
+              <span className="flex items-center gap-1.5 truncate min-w-0">
                 <AlertCircle className="w-3.5 h-3.5 shrink-0 text-red-400" />
                 <span className="truncate">{voiceError}</span>
               </span>
               <button
                 type="button"
                 onClick={clearVoiceError}
-                className="text-red-300 hover:text-white ml-2 p-0.5"
+                className="text-red-300 hover:text-white ml-2 p-0.5 shrink-0 cursor-pointer"
                 title="Dismiss"
               >
                 <X className="w-3 h-3" />
@@ -363,8 +404,9 @@ const Chatbot = ({
           {/* Messages Scroll Area */}
           <section
             data-lenis-prevent
+            data-lenis-prevent-touch
             ref={scrollRef}
-            className={`custom-scrollbar flex-1 overflow-y-auto p-4 space-y-4 ${
+            className={`custom-scrollbar flex-1 min-h-0 min-w-0 overflow-y-auto overscroll-contain p-3 sm:p-4 space-y-3 sm:space-y-4 ${
               isFullscreen ? "max-w-4xl w-full mx-auto" : ""
             }`}
           >
@@ -374,7 +416,7 @@ const Chatbot = ({
                 className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
                 <div
-                  className={`p-3.5 rounded-2xl text-sm leading-relaxed max-w-[85%] break-words ${
+                  className={`p-3 sm:p-3.5 rounded-2xl text-xs sm:text-sm leading-relaxed max-w-[85%] sm:max-w-[80%] [overflow-wrap:anywhere] break-words min-w-0 ${
                     msg.role === "bot"
                       ? "bg-white/5 text-gray-200 border border-white/5 rounded-bl-sm"
                       : "bg-cyan-500 text-black font-medium rounded-br-sm shadow-md"
@@ -387,7 +429,7 @@ const Chatbot = ({
 
             {isLoading && (
               <div className="flex justify-start">
-                <div className="p-3.5 rounded-2xl rounded-bl-sm bg-white/5 border border-white/5 text-gray-300 text-sm flex items-center gap-1.5">
+                <div className="p-3 sm:p-3.5 rounded-2xl rounded-bl-sm bg-white/5 border border-white/5 text-gray-300 text-xs sm:text-sm flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-cyan-400 animate-bounce [animation-delay:-0.3s]" />
                   <span className="w-2 h-2 rounded-full bg-cyan-400 animate-bounce [animation-delay:-0.15s]" />
                   <span className="w-2 h-2 rounded-full bg-cyan-400 animate-bounce" />
@@ -399,22 +441,22 @@ const Chatbot = ({
 
           {/* Composer Footer */}
           <footer
-            className={`p-3 border-t border-white/10 bg-white/5 shrink-0 ${
+            className={`p-2.5 sm:p-3 border-t border-white/10 bg-white/5 shrink-0 min-w-0 ${
               isFullscreen ? "max-w-4xl w-full mx-auto" : ""
             }`}
           >
             {/* Active Voice Recording Status Bar */}
             {isRecording ? (
-              <div className="flex items-center justify-between bg-red-500/10 border border-red-500/30 rounded-2xl p-2.5 px-4 animate-pulse">
-                <div className="flex items-center gap-2 text-xs font-mono text-red-400">
-                  <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
-                  <span className="font-bold">Listening...</span>
-                  <span className="text-gray-400">
+              <div className="flex items-center justify-between bg-red-500/10 border border-red-500/30 rounded-2xl p-2 px-3 sm:p-2.5 sm:px-4 animate-pulse min-w-0">
+                <div className="flex items-center gap-2 text-xs font-mono text-red-400 min-w-0">
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping shrink-0" />
+                  <span className="font-bold truncate">Listening...</span>
+                  <span className="text-gray-400 shrink-0">
                     {Math.floor(recordingDuration / 60)}:
                     {String(recordingDuration % 60).padStart(2, "0")}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                   <button
                     type="button"
                     onClick={cancelRecording}
@@ -427,7 +469,7 @@ const Chatbot = ({
                   <button
                     type="button"
                     onClick={stopRecording}
-                    className="p-1.5 px-3 rounded-lg bg-red-500 hover:bg-red-600 text-white font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-lg"
+                    className="p-1.5 px-2.5 sm:px-3 rounded-lg bg-red-500 hover:bg-red-600 text-white font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-lg"
                     title="Finish voice input"
                   >
                     <Square className="w-3 h-3 fill-current" />
@@ -436,15 +478,15 @@ const Chatbot = ({
                 </div>
               </div>
             ) : (
-              <form onSubmit={handleSend} className="flex gap-2 items-center">
+              <form onSubmit={handleSend} className="flex gap-1.5 sm:gap-2 items-center min-w-0 w-full">
                 <input
                   ref={inputRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   disabled={isLoading}
                   maxLength={800}
-                  placeholder="Ask about projects, skills, or click mic..."
-                  className="flex-1 bg-black/40 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder:text-gray-500 outline-none border border-white/10 focus:border-cyan-400 transition-colors disabled:opacity-50"
+                  placeholder="Ask a question or click mic..."
+                  className="flex-1 min-w-0 bg-black/40 rounded-xl px-3 py-2 sm:px-3.5 sm:py-2.5 text-xs sm:text-sm text-white placeholder:text-gray-500 outline-none border border-white/10 focus:border-cyan-400 transition-colors disabled:opacity-50"
                 />
 
                 {/* Microphone Voice Button */}
@@ -454,7 +496,7 @@ const Chatbot = ({
                   disabled={isLoading}
                   aria-label="Start voice input"
                   title="Speak your question (Voice Input)"
-                  className="p-2.5 rounded-xl bg-white/5 hover:bg-white/15 text-gray-300 hover:text-cyan-300 border border-white/10 transition-colors cursor-pointer shrink-0 disabled:opacity-40"
+                  className="p-2 sm:p-2.5 rounded-xl bg-white/5 hover:bg-white/15 text-gray-300 hover:text-cyan-300 border border-white/10 transition-colors cursor-pointer shrink-0 disabled:opacity-40"
                 >
                   <Mic className="w-4 h-4" />
                 </button>
@@ -464,7 +506,7 @@ const Chatbot = ({
                   type="submit"
                   disabled={isLoading || !input.trim()}
                   aria-label="Send message"
-                  className="bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-black px-4 py-2.5 rounded-xl text-xs font-bold transition-all disabled:cursor-not-allowed shrink-0 flex items-center gap-1.5 cursor-pointer"
+                  className="bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-black px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs font-bold transition-all disabled:cursor-not-allowed shrink-0 flex items-center gap-1.5 cursor-pointer shadow-md"
                 >
                   <span>SEND</span>
                   <Send className="w-3 h-3" />

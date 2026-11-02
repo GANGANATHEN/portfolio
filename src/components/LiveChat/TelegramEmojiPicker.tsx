@@ -257,9 +257,11 @@ export default function TelegramEmojiPicker({
   return (
     <div
       ref={pickerRef}
+      data-lenis-prevent
+      data-lenis-prevent-touch
       role="dialog"
       aria-label="Emoji picker"
-      className="w-72 sm:w-80 bg-[#17212b]/98 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-2.5 flex flex-col z-50 text-white animate-in fade-in zoom-in-95 duration-150 select-none"
+      className="w-[calc(100vw-2rem)] max-w-xs sm:w-80 bg-[#17212b]/98 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-2 sm:p-2.5 flex flex-col z-50 text-white animate-in fade-in zoom-in-95 duration-150 select-none"
       onClick={(e) => e.stopPropagation()}
     >
       {/* Search Bar */}
@@ -312,7 +314,11 @@ export default function TelegramEmojiPicker({
       )}
 
       {/* Emoji Grid */}
-      <div className="max-h-52 overflow-y-auto custom-scrollbar grid grid-cols-7 sm:grid-cols-8 gap-1 p-1">
+      <div
+        data-lenis-prevent
+        data-lenis-prevent-touch
+        className="max-h-48 sm:max-h-52 overflow-y-auto overscroll-contain custom-scrollbar grid grid-cols-7 sm:grid-cols-8 gap-1 p-1"
+      >
         {filteredEmojis.length === 0 ? (
           <div className="col-span-full py-6 text-center text-gray-400 text-xs">
             No emojis found for &quot;{searchQuery}&quot;
