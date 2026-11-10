@@ -161,6 +161,7 @@ export default function AdminInboxPage({
   const [showFullPickerForMsgId, setShowFullPickerForMsgId] = useState<string | null>(null);
   const [showComposerEmojiPicker, setShowComposerEmojiPicker] = useState(false);
   const [showDetailsPanel, setShowDetailsPanel] = useState(true);
+  const [showMobileDetailsModal, setShowMobileDetailsModal] = useState(false);
   const [mobileView, setMobileView] = useState<"list" | "chat">("list");
   const [copiedToast, setCopiedToast] = useState(false);
 
@@ -187,6 +188,99 @@ export default function AdminInboxPage({
   const highlightTimerRef = useRef<NodeJS.Timeout | null>(null);
   const messageElementsRef = useRef<Map<string, HTMLDivElement>>(new Map());
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const replyTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const [viewportMetrics, setViewportMetrics] = useState<{
+    height: number | null;
+    offsetTop: number;
+    isKeyboardOpen: boolean;
+  }>({ height: null, offsetTop: 0, isKeyboardOpen: false });
+
+  // Track mobile & tablet visualViewport height/offset so keyboard never hides or pushes chat off-screen
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const updateViewport = () => {
+      const vv = window.visualViewport;
+      const winH = window.innerHeight;
+      const winW = window.innerWidth;
+
+      if (!vv) {
+        setViewportMetrics({ height: null, offsetTop: 0, isKeyboardOpen: false });
+        return;
+      }
+
+      const vvH = Math.round(vv.height);
+      const vvOffsetTop = Math.max(0, Math.round(vv.offsetTop));
+      const diff = winH - vvH;
+      const isTouchOrCompact = winW < 1280 || window.matchMedia("(pointer: coarse)").matches;
+      const isKeyboardOpen = isTouchOrCompact && diff > 120;
+
+      setViewportMetrics({
+        height: isKeyboardOpen ? vvH : null,
+        offsetTop: isKeyboardOpen ? vvOffsetTop : 0,
+        isKeyboardOpen,
+      });
+    };
+
+    const vv = window.visualViewport;
+    let t1: ReturnType<typeof setTimeout> | null = null;
+    let t2: ReturnType<typeof setTimeout> | null = null;
+
+    const handleFocusChange = () => {
+      if (t1) clearTimeout(t1);
+      if (t2) clearTimeout(t2);
+      t1 = setTimeout(updateViewport, 80);
+      t2 = setTimeout(updateViewport, 320);
+    };
+
+    if (vv) {
+      vv.addEventListener("resize", updateViewport);
+      vv.addEventListener("scroll", updateViewport);
+    }
+    window.addEventListener("resize", updateViewport);
+    window.addEventListener("orientationchange", handleFocusChange);
+    window.addEventListener("focusin", handleFocusChange);
+    window.addEventListener("focusout", handleFocusChange);
+
+    return () => {
+      if (t1) clearTimeout(t1);
+      if (t2) clearTimeout(t2);
+      if (vv) {
+        vv.removeEventListener("resize", updateViewport);
+        vv.removeEventListener("scroll", updateViewport);
+      }
+      window.removeEventListener("resize", updateViewport);
+      window.removeEventListener("orientationchange", handleFocusChange);
+      window.removeEventListener("focusin", handleFocusChange);
+      window.removeEventListener("focusout", handleFocusChange);
+    };
+  }, []);
+
+  // Lock underlying document body scroll when authenticated inbox shell is active
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isAuthenticated]);
+
+  // Keep latest message visible inside message list when keyboard opens without scrolling parent viewport
+  useEffect(() => {
+    if (viewportMetrics.isKeyboardOpen && isNearBottomRef.current && messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
+  }, [viewportMetrics.isKeyboardOpen, viewportMetrics.height]);
+
+  // Auto-resize multiline reply textarea smoothly up to 112px
+  useEffect(() => {
+    const el = replyTextareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 112)}px`;
+  }, [replyText]);
 
   // Track message scroll container
   const handleContainerScroll = useCallback(() => {
@@ -330,6 +424,7 @@ export default function AdminInboxPage({
         window.history.pushState(null, "", `${window.location.pathname}${window.location.search}`);
       }
     }
+    setShowMobileDetailsModal(false);
     setSelectedConvId(null);
     setMobileView("list");
   }, []);
@@ -607,8 +702,8 @@ export default function AdminInboxPage({
   };
 
   // Send admin reply
-  const handleSendReply = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSendReply = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     const text = replyText.trim();
     const hasAttachments = pendingAttachments.length > 0;
     if ((!text && !hasAttachments) || isSendingReply || !selectedConvId) return;
@@ -1166,7 +1261,7 @@ export default function AdminInboxPage({
                 ? "bg-cyan-500 border-cyan-400 text-black shadow-xs shadow-cyan-500/50"
                 : selectedConvIds.size > 0
                 ? "border-white/40 hover:border-cyan-400 bg-white/5"
-                : "border-white/20 opacity-70 md:opacity-0 md:group-hover:opacity-100 hover:border-cyan-400 bg-white/5 focus:opacity-100"
+                : "border-white/20 opacity-70 lg:opacity-0 lg:group-hover:opacity-100 hover:border-cyan-400 bg-white/5 focus:opacity-100"
             }`}
           >
             {isBulkSelected && <Check className="w-3 h-3 stroke-[3]" />}
@@ -1239,7 +1334,7 @@ export default function AdminInboxPage({
             className={`p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer ${
               openMenuConvId === conv.id
                 ? "opacity-100 bg-white/10 text-white"
-                : "opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100"
+                : "opacity-100 lg:opacity-0 lg:group-hover:opacity-100 focus:opacity-100"
             }`}
             title="Conversation options"
           >
@@ -1297,10 +1392,264 @@ export default function AdminInboxPage({
     );
   };
 
+  const renderVisitorDetailsContent = (onCloseDetails: () => void, closeTitle: string) => {
+    if (!activeConv) return null;
+
+    return (
+      <>
+        <div className="flex items-center justify-between pb-3 border-b border-white/10">
+          <h3 className="text-xs font-bold text-white tracking-wide">Visitor Information</h3>
+          <button
+            type="button"
+            onClick={onCloseDetails}
+            className="text-gray-400 hover:text-white p-1 cursor-pointer"
+            title={closeTitle}
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {/* Profile Card */}
+        <div className="text-center space-y-2 pb-4 border-b border-white/10">
+          <div className="w-16 h-16 rounded-full bg-linear-to-tr from-cyan-600 to-blue-600 flex items-center justify-center font-bold text-white text-xl mx-auto shadow-md">
+            {activeConv.visitorName.slice(0, 1).toUpperCase()}
+          </div>
+          <div>
+            <h4 className="text-sm font-bold text-white flex items-center justify-center gap-1.5">
+              <span>{activeConv.visitorName}</span>
+              {activeConv.emailVerified && (
+                <span title="Verified Session">
+                  <ShieldCheck className="w-4 h-4 text-cyan-400 shrink-0" />
+                </span>
+              )}
+            </h4>
+            <p className="text-xs text-gray-400 font-mono mt-0.5 break-all">
+              {activeConv.visitorEmail || "Anonymous guest session"}
+            </p>
+          </div>
+        </div>
+
+        {/* Metadata Attributes */}
+        <div className="space-y-3 text-xs">
+          <div>
+            <span className="text-[10px] text-gray-400 font-mono block">Email Verification Status</span>
+            <span className="font-medium text-gray-200">
+              {activeConv.emailVerified ? (
+                <span className="text-emerald-400 font-mono flex items-center gap-1">
+                  <Check className="w-3 h-3" /> Verified (OTP Confirmed)
+                </span>
+              ) : activeConv.visitorEmail ? (
+                <span className="text-amber-400 font-mono">Unverified (Pending OTP)</span>
+              ) : (
+                <span className="text-gray-400 font-mono">None (Anonymous)</span>
+              )}
+            </span>
+          </div>
+
+          <div>
+            <span className="text-[10px] text-gray-400 font-mono block">Email Alerts Opt-In</span>
+            <span className="font-mono text-gray-300">
+              {activeConv.emailNotificationsEnabled && activeConv.emailVerified ? (
+                <span className="text-emerald-400">Active (Delivered via Resend)</span>
+              ) : (
+                <span className="text-gray-500">Disabled</span>
+              )}
+            </span>
+          </div>
+
+          <div>
+            <span className="text-[10px] text-gray-400 font-mono block">Conversation ID</span>
+            <span className="font-mono text-[11px] text-gray-300 break-all select-all">
+              {activeConv.id}
+            </span>
+          </div>
+
+          <div>
+            <span className="text-[10px] text-gray-400 font-mono block">First Contact</span>
+            <span className="font-mono text-[11px] text-gray-300">
+              {new Date(activeConv.createdAt).toLocaleString()}
+            </span>
+          </div>
+
+          <div>
+            <span className="text-[10px] text-gray-400 font-mono block">Last Activity</span>
+            <span className="font-mono text-[11px] text-gray-300">
+              {new Date(activeConv.lastMessageAt).toLocaleString()}
+            </span>
+          </div>
+        </div>
+
+        {/* Live Chat Telemetry & Device Metadata (Admin Only) */}
+        <div className="pt-3 border-t border-white/10 space-y-3 text-xs">
+          <div className="flex items-center gap-1.5 text-cyan-400 font-mono text-[10px] uppercase font-bold tracking-wider">
+            <Globe className="w-3.5 h-3.5" />
+            <span>Visitor Telemetry</span>
+          </div>
+
+          {/* Browser */}
+          <div>
+            <span className="text-[10px] text-gray-400 font-mono block">Browser & Engine</span>
+            <span className="font-mono text-[11px] text-gray-200">
+              {activeConv.metadata?.browserFamily ? (
+                <>
+                  {activeConv.metadata.browserFamily}
+                  {activeConv.metadata.browserVersion ? ` ${activeConv.metadata.browserVersion}` : ""}
+                  {activeConv.metadata.browserEngine ? ` (${activeConv.metadata.browserEngine})` : ""}
+                </>
+              ) : (
+                <span className="text-gray-500 italic">Unavailable (Not detected)</span>
+              )}
+            </span>
+          </div>
+
+          {/* Device Category & OS */}
+          <div>
+            <span className="text-[10px] text-gray-400 font-mono block">Device & Operating System</span>
+            <div className="flex items-center gap-1.5 font-mono text-[11px] text-gray-200 mt-0.5">
+              {activeConv.metadata?.deviceType === "mobile" ? (
+                <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
+              ) : activeConv.metadata?.deviceType === "tablet" ? (
+                <Tablet className="w-3.5 h-3.5 text-cyan-400" />
+              ) : (
+                <Laptop className="w-3.5 h-3.5 text-cyan-400" />
+              )}
+              <span className="capitalize">{activeConv.metadata?.deviceType || "Desktop"}</span>
+              <span className="text-gray-500">•</span>
+              <span>
+                {activeConv.metadata?.osFamily || "OS Unavailable"}
+                {activeConv.metadata?.osVersion ? ` ${activeConv.metadata.osVersion}` : ""}
+              </span>
+            </div>
+          </div>
+
+          {/* Screen & Viewport */}
+          <div>
+            <span className="text-[10px] text-gray-400 font-mono block">Screen & Viewport</span>
+            <span className="font-mono text-[11px] text-gray-300">
+              {activeConv.metadata?.screenResolution ? (
+                <>
+                  {activeConv.metadata.screenResolution} Screen
+                  {activeConv.metadata.viewportDimensions ? ` (${activeConv.metadata.viewportDimensions} viewport)` : ""}
+                </>
+              ) : activeConv.metadata?.viewportDimensions ? (
+                `${activeConv.metadata.viewportDimensions} viewport`
+              ) : (
+                <span className="text-gray-500 italic">Unavailable (Client omitted)</span>
+              )}
+            </span>
+          </div>
+
+          {/* Approximate Location */}
+          <div>
+            <span className="text-[10px] text-gray-400 font-mono block">Approximate Location</span>
+            <div className="flex items-start gap-1.5 font-mono text-[11px] text-gray-300 mt-0.5">
+              <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+              <span>
+                {activeConv.metadata?.city || activeConv.metadata?.country ? (
+                  <>
+                    {[activeConv.metadata.city, activeConv.metadata.region, activeConv.metadata.country].filter(Boolean).join(", ")}
+                    <span className="text-[10px] text-gray-500 block">IP-derived, approximate</span>
+                  </>
+                ) : (
+                  <span className="text-gray-500 italic">
+                    {activeConv.metadata?.locationUnavailableReason || "Unavailable (No edge IP-geolocation headers)"}
+                  </span>
+                )}
+              </span>
+            </div>
+          </div>
+
+          {/* Client IP */}
+          <div>
+            <span className="text-[10px] text-gray-400 font-mono block">Client IP Address</span>
+            <span className="font-mono text-[11px] text-amber-300/90 select-all">
+              {activeConv.metadata?.ip || "Unavailable"}
+            </span>
+          </div>
+
+          {/* Timezone & Language */}
+          <div>
+            <span className="text-[10px] text-gray-400 font-mono block">Timezone & Language</span>
+            <span className="font-mono text-[11px] text-gray-300">
+              {activeConv.metadata?.timezone || "Timezone Unavailable"} • {activeConv.metadata?.deviceLanguage || "en"}
+            </span>
+          </div>
+        </div>
+
+        {/* Admin Actions Card */}
+        <div className="pt-2 border-t border-white/10 space-y-2">
+          <span className="text-[10px] text-gray-400 font-mono block mb-1">Administrative Actions</span>
+
+          <button
+            type="button"
+            onClick={handleExportPdf}
+            disabled={isExportingPdf}
+            className="w-full bg-[#0e1621] hover:bg-white/5 border border-white/10 text-cyan-300 font-medium py-2 px-3 rounded-xl text-xs transition-colors flex items-center justify-between cursor-pointer"
+          >
+            <span className="flex items-center gap-2">
+              <FileDown className="w-4 h-4 text-cyan-400" />
+              <span>{isExportingPdf ? "Generating PDF..." : "Export Transcript (PDF)"}</span>
+            </span>
+            <ChevronRight className="w-3.5 h-3.5 opacity-60" />
+          </button>
+
+          <button
+            type="button"
+            onClick={(e) => handleTogglePin(activeConv.id, Boolean(activeConv.isPinned), e)}
+            className="w-full bg-[#0e1621] hover:bg-white/5 border border-white/10 text-gray-300 font-medium py-2 px-3 rounded-xl text-xs transition-colors flex items-center justify-between cursor-pointer"
+          >
+            <span className="flex items-center gap-2">
+              {activeConv.isPinned ? (
+                <>
+                  <PinOff className="w-4 h-4 text-cyan-400" />
+                  <span>Unpin Conversation</span>
+                </>
+              ) : (
+                <>
+                  <Pin className="w-4 h-4 text-cyan-400 rotate-45" />
+                  <span>Pin Conversation</span>
+                </>
+              )}
+            </span>
+            <ChevronRight className="w-3.5 h-3.5 opacity-60" />
+          </button>
+
+          <button
+            type="button"
+            onClick={handleToggleArchive}
+            className="w-full bg-[#0e1621] hover:bg-white/5 border border-white/10 text-gray-300 font-medium py-2 px-3 rounded-xl text-xs transition-colors flex items-center justify-between cursor-pointer"
+          >
+            <span className="flex items-center gap-2">
+              <Archive className="w-4 h-4 text-amber-400" />
+              <span>{activeConv.isArchived ? "Unarchive Conversation" : "Archive Conversation"}</span>
+            </span>
+            <ChevronRight className="w-3.5 h-3.5 opacity-60" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setShowMobileDetailsModal(false);
+              setConvToDelete(activeConv);
+              setDeleteConvModalOpen(true);
+            }}
+            className="w-full bg-red-950/20 hover:bg-red-900/30 border border-red-800/40 text-red-300 font-medium py-2 px-3 rounded-xl text-xs transition-colors flex items-center justify-between cursor-pointer"
+          >
+            <span className="flex items-center gap-2">
+              <Trash2 className="w-4 h-4 text-red-400" />
+              <span>Delete Conversation</span>
+            </span>
+            <ChevronRight className="w-3.5 h-3.5 opacity-60" />
+          </button>
+        </div>
+      </>
+    );
+  };
+
   // Unauthenticated Login Screen
   if (isAuthenticated === false) {
     return (
-      <main className="h-dvh max-h-dvh w-full bg-[#0e1621] flex items-center justify-center p-4">
+      <main className="min-h-dvh w-full bg-[#0e1621] flex items-center justify-center p-4 overflow-y-auto">
         <div className="w-full max-w-sm bg-[#17212b] border border-white/10 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6 text-white text-center">
           <div className="w-14 h-14 rounded-full bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mx-auto text-cyan-400">
             <Lock className="w-6 h-6" />
@@ -1379,7 +1728,28 @@ export default function AdminInboxPage({
   }
 
   return (
-    <div className="h-dvh max-h-dvh w-full bg-[#0e1621] text-white flex flex-col overflow-hidden font-sans select-none">
+    <div
+      style={
+        viewportMetrics.isKeyboardOpen && viewportMetrics.height
+          ? {
+              height: `${viewportMetrics.height}px`,
+              maxHeight: `${viewportMetrics.height}px`,
+              top: `${viewportMetrics.offsetTop}px`,
+              bottom: "auto",
+              paddingTop: "env(safe-area-inset-top, 0px)",
+              paddingBottom: "0px",
+              paddingLeft: "env(safe-area-inset-left, 0px)",
+              paddingRight: "env(safe-area-inset-right, 0px)",
+            }
+          : {
+              paddingTop: "env(safe-area-inset-top, 0px)",
+              paddingBottom: "env(safe-area-inset-bottom, 0px)",
+              paddingLeft: "env(safe-area-inset-left, 0px)",
+              paddingRight: "env(safe-area-inset-right, 0px)",
+            }
+      }
+      className="fixed inset-0 h-dvh max-h-dvh w-full bg-[#0e1621] text-white flex flex-col overflow-hidden overscroll-none font-sans select-none z-20"
+    >
       {/* Attachment Fullscreen Viewer Modal */}
       {activeViewerAttachment && (
         <AttachmentViewerModal
@@ -1535,10 +1905,10 @@ export default function AdminInboxPage({
       )}
 
       {/* Main 3-Panel Layout Container */}
-      <div className="flex-1 flex min-h-0 h-full overflow-hidden">
+      <div className="flex-1 flex min-h-0 min-w-0 h-full overflow-hidden">
         {/* PANEL 1: CONVERSATIONS SIDEBAR */}
         <aside
-          className={`w-full md:w-80 lg:w-88 border-r border-white/10 bg-[#17212b] flex flex-col shrink-0 min-h-0 h-full ${
+          className={`w-full md:w-72 lg:w-88 border-r border-white/10 bg-[#17212b] flex flex-col shrink-0 min-h-0 h-full ${
             mobileView === "chat" ? "hidden md:flex" : "flex"
           }`}
         >
@@ -1753,68 +2123,69 @@ export default function AdminInboxPage({
 
         {/* PANEL 2: CONVERSATION VIEW & CHAT WINDOW */}
         <section
-          className={`flex-1 flex flex-col bg-[#0e1621] ${
+          className={`flex-1 min-h-0 min-w-0 overflow-hidden flex flex-col bg-[#0e1621] ${
             mobileView === "list" ? "hidden md:flex" : "flex"
           }`}
         >
           {activeConv ? (
             <>
               {/* Active Chat Top Header */}
-              <div className="px-4 py-3 border-b border-white/10 bg-[#17212b] flex items-center justify-between shadow-xs">
-                <div className="flex items-center gap-3">
+              <div className="px-2.5 py-1.5 sm:px-3.5 sm:py-2.5 lg:px-4 lg:py-3 border-b border-white/10 bg-[#17212b] flex items-center justify-between gap-2 shadow-xs shrink-0 min-w-0 inbox-keyboard-compact-header">
+                <div className="flex items-center gap-2 sm:gap-2.5 lg:gap-3 min-w-0 flex-1">
                   {/* Mobile Back to List Button */}
                   <button
                     type="button"
                     onClick={handleMobileBack}
-                    className="md:hidden p-1.5 rounded-lg text-gray-400 hover:text-white cursor-pointer"
+                    className="md:hidden p-1 rounded-lg text-gray-400 hover:text-white cursor-pointer shrink-0"
                     title="Back to conversation list"
+                    aria-label="Back to conversation list"
                   >
                     <ArrowLeft className="w-4 h-4" />
                   </button>
 
-                  <div className="w-9 h-9 rounded-full bg-linear-to-tr from-cyan-600 to-blue-600 flex items-center justify-center font-bold text-white text-xs shrink-0">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 lg:w-9 lg:h-9 rounded-full bg-linear-to-tr from-cyan-600 to-blue-600 flex items-center justify-center font-bold text-white text-[11px] sm:text-xs shrink-0">
                     {activeConv.visitorName.slice(0, 1).toUpperCase()}
                   </div>
 
-                  <div>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <h2 className="text-sm font-semibold text-white">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <h2 className="text-xs sm:text-sm font-semibold text-white truncate min-w-0 leading-tight">
                         {activeConv.visitorName || "Visitor"}
                       </h2>
                       {activeConv.emailVerified ? (
-                        <span className="text-[10px] bg-emerald-950/80 text-emerald-300 border border-emerald-800/60 px-2 py-0.5 rounded-full font-mono flex items-center gap-1">
-                          <Check className="w-2.5 h-2.5" /> Verified
+                        <span className="text-[9px] sm:text-[10px] bg-emerald-950/80 text-emerald-300 border border-emerald-800/60 px-1.5 py-0 sm:px-2 sm:py-0.5 rounded-full font-mono flex items-center gap-0.5 sm:gap-1 shrink-0 whitespace-nowrap">
+                          <Check className="w-2.5 h-2.5 shrink-0" /> Verified
                         </span>
                       ) : activeConv.visitorEmail ? (
-                        <span className="text-[10px] bg-amber-950/80 text-amber-300 border border-amber-800/60 px-2 py-0.5 rounded-full font-mono">
+                        <span className="text-[9px] sm:text-[10px] bg-amber-950/80 text-amber-300 border border-amber-800/60 px-1.5 py-0 sm:px-2 sm:py-0.5 rounded-full font-mono shrink-0 whitespace-nowrap">
                           Unverified Email
                         </span>
                       ) : (
-                        <span className="text-[10px] bg-gray-900 text-gray-400 border border-gray-800 px-2 py-0.5 rounded-full font-mono">
+                        <span className="text-[9px] sm:text-[10px] bg-gray-900 text-gray-400 border border-gray-800 px-1.5 py-0 sm:px-2 sm:py-0.5 rounded-full font-mono shrink-0 whitespace-nowrap">
                           Anonymous Guest
                         </span>
                       )}
                     </div>
-                    <p className="text-[11px] text-gray-400 font-mono">
+                    <p className="text-[10px] sm:text-[11px] leading-tight text-gray-400 font-mono truncate">
                       {activeConv.visitorEmail || "Guest browser session"}
                     </p>
                   </div>
                 </div>
 
                 {/* Quick Actions Header Toolbar */}
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
                   {/* PDF Export */}
                   <button
                     type="button"
                     onClick={handleExportPdf}
                     disabled={isExportingPdf}
-                    className="p-2 rounded-lg text-gray-400 hover:text-cyan-300 hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-1 text-xs"
+                    className="p-1.5 sm:p-2 rounded-lg text-gray-400 hover:text-cyan-300 hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-1 text-xs"
                     title="Export Full Transcript to A4 PDF"
                   >
                     {isExportingPdf ? (
-                      <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" />
+                      <RefreshCw className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin text-cyan-400" />
                     ) : (
-                      <FileDown className="w-4 h-4" />
+                      <FileDown className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     )}
                     <span className="hidden lg:inline text-[11px] font-mono">PDF Export</span>
                   </button>
@@ -1823,7 +2194,7 @@ export default function AdminInboxPage({
                   <button
                     type="button"
                     onClick={(e) => handleTogglePin(activeConv.id, Boolean(activeConv.isPinned), e)}
-                    className={`p-2 rounded-lg transition-colors cursor-pointer ${
+                    className={`p-1.5 sm:p-2 rounded-lg transition-colors cursor-pointer ${
                       activeConv.isPinned
                         ? "text-cyan-400 bg-cyan-500/10"
                         : "text-gray-400 hover:text-white hover:bg-white/5"
@@ -1831,9 +2202,9 @@ export default function AdminInboxPage({
                     title={activeConv.isPinned ? "Unpin Conversation" : "Pin Conversation"}
                   >
                     {activeConv.isPinned ? (
-                      <PinOff className="w-4 h-4" />
+                      <PinOff className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     ) : (
-                      <Pin className="w-4 h-4 rotate-45" />
+                      <Pin className="w-3.5 h-3.5 sm:w-4 sm:h-4 rotate-45" />
                     )}
                   </button>
 
@@ -1841,14 +2212,14 @@ export default function AdminInboxPage({
                   <button
                     type="button"
                     onClick={handleToggleArchive}
-                    className={`p-2 rounded-lg transition-colors cursor-pointer ${
+                    className={`p-1.5 sm:p-2 rounded-lg transition-colors cursor-pointer ${
                       activeConv.isArchived
                         ? "text-amber-400 bg-amber-500/10"
                         : "text-gray-400 hover:text-white hover:bg-white/5"
                     }`}
                     title={activeConv.isArchived ? "Unarchive Conversation" : "Archive Conversation"}
                   >
-                    <Archive className="w-4 h-4" />
+                    <Archive className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   </button>
 
                   {/* Delete Conversation */}
@@ -1858,13 +2229,24 @@ export default function AdminInboxPage({
                       setConvToDelete(activeConv);
                       setDeleteConvModalOpen(true);
                     }}
-                    className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-white/5 transition-colors cursor-pointer"
+                    className="p-1.5 sm:p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-white/5 transition-colors cursor-pointer"
                     title="Delete Conversation"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   </button>
 
-                  {/* Toggle Details Panel */}
+                  {/* Mobile & Tablet Visitor Details Drawer Trigger */}
+                  <button
+                    type="button"
+                    onClick={() => setShowMobileDetailsModal(true)}
+                    className="flex xl:hidden p-1.5 sm:p-2 rounded-lg text-gray-400 hover:text-cyan-300 hover:bg-white/5 transition-colors cursor-pointer"
+                    title="Visitor Information"
+                    aria-label="Visitor Information"
+                  >
+                    <Info className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  </button>
+
+                  {/* Toggle Details Panel (Desktop) */}
                   <button
                     type="button"
                     onClick={() => setShowDetailsPanel(!showDetailsPanel)}
@@ -1886,15 +2268,16 @@ export default function AdminInboxPage({
                 onScroll={handleContainerScroll}
                 onWheel={handleWheel}
                 data-lenis-prevent
-                className="flex-1 min-h-0 overscroll-contain p-4 overflow-y-auto custom-scrollbar space-y-3 bg-[#0e1621]"
+                data-lenis-prevent-touch
+                className="flex-1 min-h-0 min-w-0 overscroll-contain px-2.5 py-2.5 sm:p-4 overflow-y-auto custom-scrollbar space-y-2.5 sm:space-y-3 bg-[#0e1621]"
               >
                 {isLoadingMessages ? (
-                  <div className="h-full flex items-center justify-center text-gray-500 text-xs font-mono">
+                  <div className="min-h-full flex items-center justify-center text-gray-500 text-xs font-mono">
                     <RefreshCw className="w-4 h-4 animate-spin mr-2 text-cyan-400" />
                     <span>Loading conversation history...</span>
                   </div>
                 ) : activeMessages.length === 0 ? (
-                  <div className="h-full flex items-center justify-center text-gray-500 text-xs">
+                  <div className="min-h-full flex items-center justify-center text-gray-500 text-xs">
                     No messages in this conversation yet.
                   </div>
                 ) : (
@@ -1921,7 +2304,7 @@ export default function AdminInboxPage({
                     return (
                       <React.Fragment key={m.id}>
                         {showDateHeader && (
-                          <div className="flex justify-center my-3 select-none">
+                          <div className="flex justify-center my-2 sm:my-3 select-none">
                             <span className="bg-[#17212b]/80 border border-white/5 text-gray-400 text-[10px] font-semibold px-3 py-0.5 rounded-full shadow-xs">
                               {currentDate}
                             </span>
@@ -1937,7 +2320,7 @@ export default function AdminInboxPage({
                               messageElementsRef.current.delete(m.id);
                             }
                           }}
-                          className={`flex flex-col group relative transition-all duration-300 rounded-xl ${
+                          className={`flex flex-col group relative transition-all duration-300 rounded-xl min-w-0 ${
                             highlightedMessageId === m.id
                               ? "bg-cyan-500/20 ring-2 ring-cyan-400 p-1.5"
                               : ""
@@ -1957,7 +2340,7 @@ export default function AdminInboxPage({
                                   handleReplyReferenceClick(m.replyToId || m.replyPreview?.id);
                                 }
                               }}
-                              className={`mb-0.5 text-[11px] px-2.5 py-1 rounded-t-xl bg-black/30 hover:bg-black/50 transition-colors border-l-2 max-w-[85%] truncate flex items-center gap-1.5 cursor-pointer select-none ${
+                              className={`mb-0.5 text-[11px] px-2.5 py-1 rounded-t-xl bg-black/30 hover:bg-black/50 transition-colors border-l-2 max-w-[88%] sm:max-w-[85%] truncate flex items-center gap-1.5 cursor-pointer select-none ${
                                 isOwner
                                   ? "border-purple-400 text-purple-200 mr-1"
                                   : "border-cyan-300 text-cyan-200 ml-1"
@@ -1981,7 +2364,7 @@ export default function AdminInboxPage({
 
                             return (
                               <div
-                                className={`p-3 rounded-2xl text-xs sm:text-[13px] max-w-[85%] md:max-w-[75%] break-words leading-relaxed shadow-sm ${
+                                className={`px-3 py-2 sm:p-3 rounded-2xl text-xs sm:text-[13px] max-w-[88%] sm:max-w-[85%] md:max-w-[78%] lg:max-w-[75%] [overflow-wrap:anywhere] break-words min-w-0 leading-relaxed shadow-sm ${
                                   isOwner
                                     ? isDeletedByOwner
                                       ? "italic opacity-60 bg-white/5 text-gray-400 rounded-br-xs"
@@ -2006,7 +2389,7 @@ export default function AdminInboxPage({
                                 )}
 
                                 {isEditing ? (
-                                  <div className="space-y-2 min-w-[220px]">
+                                  <div className="space-y-2 min-w-[180px] sm:min-w-[220px] max-w-full">
                                     <textarea
                                       value={editText}
                                       onChange={(e) => setEditText(e.target.value)}
@@ -2033,7 +2416,7 @@ export default function AdminInboxPage({
                                   </div>
                                 ) : (
                                   <div>
-                                    <span>{m.content}</span>
+                                    <span className="whitespace-pre-wrap">{m.content}</span>
                                     {m.isEdited && !m.isDeleted && (
                                       <span className="text-[10px] text-gray-300/80 font-mono ml-1.5 opacity-80">
                                         (edited)
@@ -2351,14 +2734,14 @@ export default function AdminInboxPage({
 
                           {/* Quick Reactions Bar */}
                           {activeReactionMsgId === m.id && (
-                            <div className="relative mt-1 z-30">
-                              <div className="flex items-center gap-1 p-1 bg-[#17212b] border border-white/15 rounded-full shadow-2xl animate-in fade-in zoom-in-95 duration-100">
+                            <div className="relative mt-1 z-30 max-w-full">
+                              <div className="flex items-center gap-1 p-1 bg-[#17212b] border border-white/15 rounded-full shadow-2xl animate-in fade-in zoom-in-95 duration-100 max-w-full overflow-x-auto no-scrollbar">
                                 {QUICK_REACTIONS.map((emoji) => (
                                   <button
                                     key={emoji}
                                     type="button"
                                     onClick={() => handleToggleReaction(m.id, emoji)}
-                                    className="w-7 h-7 rounded-full flex items-center justify-center text-base hover:scale-130 transition-transform cursor-pointer hover:bg-white/10"
+                                    className="w-7 h-7 rounded-full flex items-center justify-center text-base hover:scale-130 transition-transform cursor-pointer hover:bg-white/10 shrink-0"
                                     title={`React with ${emoji}`}
                                   >
                                     {emoji}
@@ -2370,7 +2753,7 @@ export default function AdminInboxPage({
                                     setActiveReactionMsgId(null);
                                     setShowFullPickerForMsgId(m.id);
                                   }}
-                                  className="w-7 h-7 rounded-full flex items-center justify-center text-gray-400 hover:text-cyan-300 hover:bg-white/10 transition-colors cursor-pointer"
+                                  className="w-7 h-7 rounded-full flex items-center justify-center text-gray-400 hover:text-cyan-300 hover:bg-white/10 transition-colors cursor-pointer shrink-0"
                                   title="More emojis"
                                 >
                                   <Smile className="w-4 h-4" />
@@ -2381,7 +2764,7 @@ export default function AdminInboxPage({
 
                           {/* Full Categorized Emoji Picker Drawer */}
                           {showFullPickerForMsgId === m.id && (
-                            <div className="relative mt-2 z-40">
+                            <div className="relative mt-2 z-40 max-w-full">
                               <TelegramEmojiPicker
                                 mode="reaction"
                                 currentReactions={Object.keys(m.reactions || {})}
@@ -2399,14 +2782,15 @@ export default function AdminInboxPage({
               </div>
 
               {/* Telegram Composer Footer */}
-              <div className="p-3 border-t border-white/10 bg-[#17212b] space-y-2 relative">
+              <div className="p-2 sm:p-3 border-t border-white/10 bg-[#17212b] space-y-1.5 sm:space-y-2 relative shrink-0 min-w-0">
                 {/* Full Composer Emoji Picker Drawer */}
                 {showComposerEmojiPicker && (
-                  <div className="absolute bottom-16 left-3 z-50">
+                  <div className="absolute bottom-14 sm:bottom-16 left-2 sm:left-3 right-2 sm:right-auto z-50">
                     <TelegramEmojiPicker
                       mode="composer"
                       onSelect={(emoji) => {
                         setReplyText((prev) => prev + emoji);
+                        replyTextareaRef.current?.focus();
                       }}
                       onClose={() => setShowComposerEmojiPicker(false)}
                     />
@@ -2415,8 +2799,8 @@ export default function AdminInboxPage({
 
                 {/* Quoting Banner */}
                 {replyingTo && (
-                  <div className="flex items-center justify-between bg-[#0e1621] border-l-3 border-purple-400 rounded-r-xl px-3 py-1.5 text-xs">
-                    <div className="flex items-center gap-1.5 truncate">
+                  <div className="flex items-center justify-between bg-[#0e1621] border-l-3 border-purple-400 rounded-r-xl px-2.5 sm:px-3 py-1.5 text-xs min-w-0">
+                    <div className="flex items-center gap-1.5 truncate min-w-0 flex-1">
                       <Reply className="w-3.5 h-3.5 text-purple-400 shrink-0 rotate-180" />
                       <span className="font-semibold text-purple-300 shrink-0">
                         {replyingTo.senderType === "owner" ? "Ganganathan" : "Visitor"}:
@@ -2428,7 +2812,7 @@ export default function AdminInboxPage({
                     <button
                       type="button"
                       onClick={() => setReplyingTo(null)}
-                      className="text-gray-400 hover:text-white p-0.5 ml-2 cursor-pointer"
+                      className="text-gray-400 hover:text-white p-0.5 ml-2 cursor-pointer shrink-0"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -2437,20 +2821,20 @@ export default function AdminInboxPage({
 
                 {/* Pending Attachment Pills */}
                 {pendingAttachments.length > 0 && (
-                  <div className="flex gap-1.5 flex-wrap">
+                  <div className="flex gap-1.5 flex-wrap min-w-0">
                     {pendingAttachments.map((att) => (
                       <div
                         key={att.id}
-                        className="flex items-center gap-1.5 bg-[#0e1621] border border-cyan-500/30 text-cyan-200 text-xs px-2.5 py-1 rounded-lg"
+                        className="flex items-center gap-1.5 bg-[#0e1621] border border-cyan-500/30 text-cyan-200 text-xs px-2 sm:px-2.5 py-1 rounded-lg min-w-0 max-w-full"
                       >
                         <Paperclip className="w-3 h-3 text-cyan-400 shrink-0" />
-                        <span className="truncate max-w-[140px] font-mono">{att.fileName}</span>
+                        <span className="truncate max-w-[110px] sm:max-w-[140px] font-mono">{att.fileName}</span>
                         <button
                           type="button"
                           onClick={() =>
                             setPendingAttachments((prev) => prev.filter((a) => a.id !== att.id))
                           }
-                          className="text-gray-400 hover:text-white cursor-pointer ml-1"
+                          className="text-gray-400 hover:text-white cursor-pointer ml-1 shrink-0"
                         >
                           <X className="w-3 h-3" />
                         </button>
@@ -2460,14 +2844,14 @@ export default function AdminInboxPage({
                 )}
 
                 {uploadError && (
-                  <p className="text-[10px] text-red-400 font-mono flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" />
-                    <span>{uploadError}</span>
+                  <p className="text-[10px] text-red-400 font-mono flex items-center gap-1 min-w-0">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    <span className="truncate">{uploadError}</span>
                   </p>
                 )}
 
                 {/* Input Form Row */}
-                <form onSubmit={handleSendReply} className="flex gap-2 items-center">
+                <form onSubmit={handleSendReply} className="flex gap-1.5 sm:gap-2 items-end min-w-0 w-full">
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -2482,46 +2866,59 @@ export default function AdminInboxPage({
                     type="button"
                     disabled={isUploadingAttachment || isSendingReply}
                     onClick={() => fileInputRef.current?.click()}
-                    className="p-2 rounded-xl text-gray-400 hover:text-cyan-300 hover:bg-white/5 transition-colors disabled:opacity-40 cursor-pointer shrink-0"
+                    className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl text-gray-400 hover:text-cyan-300 hover:bg-white/5 transition-colors disabled:opacity-40 cursor-pointer shrink-0 flex items-center justify-center"
                     title="Attach file"
                   >
-                    <Paperclip className="w-5 h-5" />
+                    <Paperclip className="w-4 h-4 sm:w-5 sm:h-5" />
                   </button>
 
                   {/* Emoji Picker Button */}
                   <button
                     type="button"
                     onClick={() => setShowComposerEmojiPicker(!showComposerEmojiPicker)}
-                    className={`p-2 rounded-xl transition-colors cursor-pointer shrink-0 ${
+                    className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl transition-colors cursor-pointer shrink-0 flex items-center justify-center ${
                       showComposerEmojiPicker
                         ? "text-cyan-400 bg-white/10"
                         : "text-gray-400 hover:text-yellow-400 hover:bg-white/5"
                     }`}
                     title="Insert emoji"
                   >
-                    <Smile className="w-5 h-5" />
+                    <Smile className="w-4 h-4 sm:w-5 sm:h-5" />
                   </button>
 
-                  {/* Reply Input */}
-                  <input
+                  {/* Multiline Auto-Resizing Reply Input */}
+                  <textarea
+                    ref={replyTextareaRef}
+                    rows={1}
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                        const isCoarsePointer =
+                          typeof window !== "undefined" &&
+                          window.matchMedia("(pointer: coarse)").matches;
+                        if (!isCoarsePointer) {
+                          e.preventDefault();
+                          handleSendReply();
+                        }
+                      }
+                    }}
                     placeholder={`Reply to ${activeConv.visitorName}...`}
                     disabled={isSendingReply}
-                    className="flex-1 bg-[#0e1621] rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white placeholder:text-gray-500 outline-none border border-white/10 focus:border-cyan-400 transition-colors disabled:opacity-50"
+                    className="flex-1 min-w-0 bg-[#0e1621] rounded-xl px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm leading-5 text-white placeholder:text-gray-500 outline-none border border-white/10 focus:border-cyan-400 transition-colors disabled:opacity-50 resize-none max-h-28 overflow-y-auto custom-scrollbar"
                   />
 
                   {/* Send Button */}
                   <button
                     type="submit"
                     disabled={isSendingReply || (!replyText.trim() && pendingAttachments.length === 0)}
-                    className="w-9 h-9 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed shrink-0 cursor-pointer shadow-md"
+                    className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed shrink-0 cursor-pointer shadow-md"
                     title="Send reply"
                   >
                     {isSendingReply ? (
-                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <RefreshCw className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" />
                     ) : (
-                      <Send className="w-4 h-4 ml-0.5" />
+                      <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 ml-0.5" />
                     )}
                   </button>
                 </form>
@@ -2545,251 +2942,28 @@ export default function AdminInboxPage({
             data-lenis-prevent
             data-lenis-prevent-touch
           >
-            <div className="flex items-center justify-between pb-3 border-b border-white/10">
-              <h3 className="text-xs font-bold text-white tracking-wide">Visitor Information</h3>
-              <button
-                type="button"
-                onClick={() => setShowDetailsPanel(false)}
-                className="text-gray-400 hover:text-white p-1 cursor-pointer"
-                title="Hide details panel"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {/* Profile Card */}
-            <div className="text-center space-y-2 pb-4 border-b border-white/10">
-              <div className="w-16 h-16 rounded-full bg-linear-to-tr from-cyan-600 to-blue-600 flex items-center justify-center font-bold text-white text-xl mx-auto shadow-md">
-                {activeConv.visitorName.slice(0, 1).toUpperCase()}
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-white flex items-center justify-center gap-1.5">
-                  <span>{activeConv.visitorName}</span>
-                  {activeConv.emailVerified && (
-                    <span title="Verified Session">
-                      <ShieldCheck className="w-4 h-4 text-cyan-400 shrink-0" />
-                    </span>
-                  )}
-                </h4>
-                <p className="text-xs text-gray-400 font-mono mt-0.5">
-                  {activeConv.visitorEmail || "Anonymous guest session"}
-                </p>
-              </div>
-            </div>
-
-            {/* Metadata Attributes */}
-            <div className="space-y-3 text-xs">
-              <div>
-                <span className="text-[10px] text-gray-400 font-mono block">Email Verification Status</span>
-                <span className="font-medium text-gray-200">
-                  {activeConv.emailVerified ? (
-                    <span className="text-emerald-400 font-mono flex items-center gap-1">
-                      <Check className="w-3 h-3" /> Verified (OTP Confirmed)
-                    </span>
-                  ) : activeConv.visitorEmail ? (
-                    <span className="text-amber-400 font-mono">Unverified (Pending OTP)</span>
-                  ) : (
-                    <span className="text-gray-400 font-mono">None (Anonymous)</span>
-                  )}
-                </span>
-              </div>
-
-              <div>
-                <span className="text-[10px] text-gray-400 font-mono block">Email Alerts Opt-In</span>
-                <span className="font-mono text-gray-300">
-                  {activeConv.emailNotificationsEnabled && activeConv.emailVerified ? (
-                    <span className="text-emerald-400">Active (Delivered via Resend)</span>
-                  ) : (
-                    <span className="text-gray-500">Disabled</span>
-                  )}
-                </span>
-              </div>
-
-              <div>
-                <span className="text-[10px] text-gray-400 font-mono block">Conversation ID</span>
-                <span className="font-mono text-[11px] text-gray-300 break-all select-all">
-                  {activeConv.id}
-                </span>
-              </div>
-
-              <div>
-                <span className="text-[10px] text-gray-400 font-mono block">First Contact</span>
-                <span className="font-mono text-[11px] text-gray-300">
-                  {new Date(activeConv.createdAt).toLocaleString()}
-                </span>
-              </div>
-
-              <div>
-                <span className="text-[10px] text-gray-400 font-mono block">Last Activity</span>
-                <span className="font-mono text-[11px] text-gray-300">
-                  {new Date(activeConv.lastMessageAt).toLocaleString()}
-                </span>
-              </div>
-            </div>
-
-            {/* Live Chat Telemetry & Device Metadata (Admin Only) */}
-            <div className="pt-3 border-t border-white/10 space-y-3 text-xs">
-              <div className="flex items-center gap-1.5 text-cyan-400 font-mono text-[10px] uppercase font-bold tracking-wider">
-                <Globe className="w-3.5 h-3.5" />
-                <span>Visitor Telemetry</span>
-              </div>
-
-              {/* Browser */}
-              <div>
-                <span className="text-[10px] text-gray-400 font-mono block">Browser & Engine</span>
-                <span className="font-mono text-[11px] text-gray-200">
-                  {activeConv.metadata?.browserFamily ? (
-                    <>
-                      {activeConv.metadata.browserFamily}
-                      {activeConv.metadata.browserVersion ? ` ${activeConv.metadata.browserVersion}` : ""}
-                      {activeConv.metadata.browserEngine ? ` (${activeConv.metadata.browserEngine})` : ""}
-                    </>
-                  ) : (
-                    <span className="text-gray-500 italic">Unavailable (Not detected)</span>
-                  )}
-                </span>
-              </div>
-
-              {/* Device Category & OS */}
-              <div>
-                <span className="text-[10px] text-gray-400 font-mono block">Device & Operating System</span>
-                <div className="flex items-center gap-1.5 font-mono text-[11px] text-gray-200 mt-0.5">
-                  {activeConv.metadata?.deviceType === "mobile" ? (
-                    <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
-                  ) : activeConv.metadata?.deviceType === "tablet" ? (
-                    <Tablet className="w-3.5 h-3.5 text-cyan-400" />
-                  ) : (
-                    <Laptop className="w-3.5 h-3.5 text-cyan-400" />
-                  )}
-                  <span className="capitalize">{activeConv.metadata?.deviceType || "Desktop"}</span>
-                  <span className="text-gray-500">•</span>
-                  <span>
-                    {activeConv.metadata?.osFamily || "OS Unavailable"}
-                    {activeConv.metadata?.osVersion ? ` ${activeConv.metadata.osVersion}` : ""}
-                  </span>
-                </div>
-              </div>
-
-              {/* Screen & Viewport */}
-              <div>
-                <span className="text-[10px] text-gray-400 font-mono block">Screen & Viewport</span>
-                <span className="font-mono text-[11px] text-gray-300">
-                  {activeConv.metadata?.screenResolution ? (
-                    <>
-                      {activeConv.metadata.screenResolution} Screen
-                      {activeConv.metadata.viewportDimensions ? ` (${activeConv.metadata.viewportDimensions} viewport)` : ""}
-                    </>
-                  ) : activeConv.metadata?.viewportDimensions ? (
-                    `${activeConv.metadata.viewportDimensions} viewport`
-                  ) : (
-                    <span className="text-gray-500 italic">Unavailable (Client omitted)</span>
-                  )}
-                </span>
-              </div>
-
-              {/* Approximate Location */}
-              <div>
-                <span className="text-[10px] text-gray-400 font-mono block">Approximate Location</span>
-                <div className="flex items-start gap-1.5 font-mono text-[11px] text-gray-300 mt-0.5">
-                  <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
-                  <span>
-                    {activeConv.metadata?.city || activeConv.metadata?.country ? (
-                      <>
-                        {[activeConv.metadata.city, activeConv.metadata.region, activeConv.metadata.country].filter(Boolean).join(", ")}
-                        <span className="text-[10px] text-gray-500 block">IP-derived, approximate</span>
-                      </>
-                    ) : (
-                      <span className="text-gray-500 italic">
-                        {activeConv.metadata?.locationUnavailableReason || "Unavailable (No edge IP-geolocation headers)"}
-                      </span>
-                    )}
-                  </span>
-                </div>
-              </div>
-
-              {/* Client IP */}
-              <div>
-                <span className="text-[10px] text-gray-400 font-mono block">Client IP Address</span>
-                <span className="font-mono text-[11px] text-amber-300/90 select-all">
-                  {activeConv.metadata?.ip || "Unavailable"}
-                </span>
-              </div>
-
-              {/* Timezone & Language */}
-              <div>
-                <span className="text-[10px] text-gray-400 font-mono block">Timezone & Language</span>
-                <span className="font-mono text-[11px] text-gray-300">
-                  {activeConv.metadata?.timezone || "Timezone Unavailable"} • {activeConv.metadata?.deviceLanguage || "en"}
-                </span>
-              </div>
-            </div>
-
-            {/* Admin Actions Card */}
-            <div className="pt-2 border-t border-white/10 space-y-2">
-              <span className="text-[10px] text-gray-400 font-mono block mb-1">Administrative Actions</span>
-
-              <button
-                type="button"
-                onClick={handleExportPdf}
-                disabled={isExportingPdf}
-                className="w-full bg-[#0e1621] hover:bg-white/5 border border-white/10 text-cyan-300 font-medium py-2 px-3 rounded-xl text-xs transition-colors flex items-center justify-between cursor-pointer"
-              >
-                <span className="flex items-center gap-2">
-                  <FileDown className="w-4 h-4 text-cyan-400" />
-                  <span>{isExportingPdf ? "Generating PDF..." : "Export Transcript (PDF)"}</span>
-                </span>
-                <ChevronRight className="w-3.5 h-3.5 opacity-60" />
-              </button>
-
-              <button
-                type="button"
-                onClick={(e) => handleTogglePin(activeConv.id, Boolean(activeConv.isPinned), e)}
-                className="w-full bg-[#0e1621] hover:bg-white/5 border border-white/10 text-gray-300 font-medium py-2 px-3 rounded-xl text-xs transition-colors flex items-center justify-between cursor-pointer"
-              >
-                <span className="flex items-center gap-2">
-                  {activeConv.isPinned ? (
-                    <>
-                      <PinOff className="w-4 h-4 text-cyan-400" />
-                      <span>Unpin Conversation</span>
-                    </>
-                  ) : (
-                    <>
-                      <Pin className="w-4 h-4 text-cyan-400 rotate-45" />
-                      <span>Pin Conversation</span>
-                    </>
-                  )}
-                </span>
-                <ChevronRight className="w-3.5 h-3.5 opacity-60" />
-              </button>
-
-              <button
-                type="button"
-                onClick={handleToggleArchive}
-                className="w-full bg-[#0e1621] hover:bg-white/5 border border-white/10 text-gray-300 font-medium py-2 px-3 rounded-xl text-xs transition-colors flex items-center justify-between cursor-pointer"
-              >
-                <span className="flex items-center gap-2">
-                  <Archive className="w-4 h-4 text-amber-400" />
-                  <span>{activeConv.isArchived ? "Unarchive Conversation" : "Archive Conversation"}</span>
-                </span>
-                <ChevronRight className="w-3.5 h-3.5 opacity-60" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setConvToDelete(activeConv);
-                  setDeleteConvModalOpen(true);
-                }}
-                className="w-full bg-red-950/20 hover:bg-red-900/30 border border-red-800/40 text-red-300 font-medium py-2 px-3 rounded-xl text-xs transition-colors flex items-center justify-between cursor-pointer"
-              >
-                <span className="flex items-center gap-2">
-                  <Trash2 className="w-4 h-4 text-red-400" />
-                  <span>Delete Conversation</span>
-                </span>
-                <ChevronRight className="w-3.5 h-3.5 opacity-60" />
-              </button>
-            </div>
+            {renderVisitorDetailsContent(() => setShowDetailsPanel(false), "Hide details panel")}
           </aside>
+        )}
+
+        {/* MOBILE & TABLET VISITOR DETAILS DRAWER */}
+        {showMobileDetailsModal && activeConv && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Visitor Information"
+            className="xl:hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex justify-end animate-in fade-in duration-150"
+            onClick={() => setShowMobileDetailsModal(false)}
+          >
+            <aside
+              className="w-[88vw] max-w-sm bg-[#17212b] border-l border-white/10 h-full min-h-0 flex flex-col p-4 space-y-5 overflow-y-auto custom-scrollbar settings-scrollbar overscroll-contain select-none shadow-2xl"
+              data-lenis-prevent
+              data-lenis-prevent-touch
+              onClick={(e) => e.stopPropagation()}
+            >
+              {renderVisitorDetailsContent(() => setShowMobileDetailsModal(false), "Close visitor details")}
+            </aside>
+          </div>
         )}
       </div>
     </div>

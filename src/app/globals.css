@@ -418,3 +418,11 @@ canvas {
     overflow: hidden;
   }
 }
+
+/* Compact Admin Inbox header on mobile/tablet short viewports when keyboard opens */
+@media (max-width: 1279px) and (max-height: 540px) {
+  .inbox-keyboard-compact-header {
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.25rem !important;
+  }
+}
