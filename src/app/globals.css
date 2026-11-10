@@ -398,3 +398,23 @@ canvas {
 }
 
 /* hero section styles */
+
+/* Compact mobile chat headers and banners when virtual keyboard compresses viewport height */
+@media (max-width: 639px) and (max-height: 540px) {
+  .chat-keyboard-compact-header {
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.25rem !important;
+  }
+
+  .chat-keyboard-compact-banner {
+    padding-top: 0.125rem !important;
+    padding-bottom: 0.125rem !important;
+  }
+
+  .chat-keyboard-compact-text {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+    overflow: hidden;
+  }
+}

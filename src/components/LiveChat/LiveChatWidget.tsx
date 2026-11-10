@@ -1247,9 +1247,10 @@ export default function LiveChatWidget({
             !isEmbedded
               ? isFullscreen
                 ? {
-                    height: visualHeight ? `${visualHeight}px` : "100dvh",
-                    maxHeight: visualHeight ? `${visualHeight}px` : "100dvh",
-                    top: offsetTop > 0 ? `${offsetTop}px` : 0,
+                    height: isKeyboardOpen && visualHeight ? `${visualHeight}px` : "100dvh",
+                    maxHeight: isKeyboardOpen && visualHeight ? `${visualHeight}px` : "100dvh",
+                    top: isKeyboardOpen && offsetTop > 0 ? `${offsetTop}px` : 0,
+                    bottom: isKeyboardOpen ? "auto" : 0,
                     paddingTop: "env(safe-area-inset-top, 0px)",
                     paddingBottom: isKeyboardOpen ? "0px" : "env(safe-area-inset-bottom, 0px)",
                     paddingLeft: "env(safe-area-inset-left, 0px)",
@@ -1263,7 +1264,9 @@ export default function LiveChatWidget({
                     height: isKeyboardOpen
                       ? `${Math.min(480, Math.max(260, visualHeight - 16))}px`
                       : "min(580px, calc(100dvh - 5.5rem))",
-                    maxHeight: `${Math.max(260, visualHeight - (isKeyboardOpen ? 12 : 24))}px`,
+                    maxHeight: isKeyboardOpen
+                      ? `${Math.max(260, visualHeight - 12)}px`
+                      : "calc(100dvh - 1.5rem)",
                   }
                 : undefined
               : undefined
@@ -1277,14 +1280,14 @@ export default function LiveChatWidget({
           }
         >
           {/* Telegram Header */}
-          <header className="px-3 sm:px-4 py-2.5 sm:py-3 border-b border-white/10 bg-[#17212b] flex justify-between items-center select-none shadow-sm shrink-0 min-w-0">
-            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+          <header className="px-2.5 py-1.5 sm:px-4 sm:py-3 border-b border-white/10 bg-[#17212b] flex justify-between items-center select-none shadow-sm shrink-0 min-w-0 chat-keyboard-compact-header">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
               <div className="relative shrink-0">
-                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-linear-to-tr from-cyan-600 to-blue-600 flex items-center justify-center text-white font-bold text-xs sm:text-sm shadow-md">
+                <div className="w-7 h-7 sm:w-10 sm:h-10 rounded-full bg-linear-to-tr from-cyan-600 to-blue-600 flex items-center justify-center text-white font-bold text-[11px] sm:text-sm shadow-md">
                   G
                 </div>
                 <span
-                  className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-[#17212b] ${
+                  className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 sm:w-3 sm:h-3 rounded-full border-2 border-[#17212b] ${
                     isOnline ? "bg-emerald-400" : "bg-gray-400"
                   }`}
                 />
@@ -1292,7 +1295,7 @@ export default function LiveChatWidget({
 
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <h3 className="text-xs sm:text-sm font-semibold text-white tracking-tight truncate">
+                  <h3 className="text-xs sm:text-sm font-semibold text-white tracking-tight leading-tight truncate">
                     Ganganathan
                   </h3>
                   {profile.emailVerified && (
@@ -1301,7 +1304,7 @@ export default function LiveChatWidget({
                     </span>
                   )}
                 </div>
-                <p className="text-[10px] sm:text-[11px] text-gray-400 truncate">
+                <p className="text-[10px] sm:text-[11px] leading-tight text-gray-400 truncate">
                   {connectionStatus === "reconnecting" ? (
                     <span className="text-amber-400 flex items-center gap-1 font-mono">
                       <RefreshCw className="w-2.5 h-2.5 animate-spin" /> {connectionErrorMsg || "Connecting..."}
@@ -1326,9 +1329,9 @@ export default function LiveChatWidget({
                   setAuthSuccess("");
                 }}
                 title="Account & Notification Settings"
-                className="w-8 h-8 rounded-full text-gray-400 hover:text-cyan-300 hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer"
+                className="w-7 h-7 sm:w-8 sm:h-8 rounded-full text-gray-400 hover:text-cyan-300 hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer"
               >
-                {profile.emailVerified ? <User className="w-4 h-4 text-cyan-400" /> : <Settings className="w-4 h-4" />}
+                {profile.emailVerified ? <User className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-400" /> : <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
               </button>
 
               {!isEmbedded && (
@@ -1339,12 +1342,12 @@ export default function LiveChatWidget({
                     onClick={() => setIsFullscreen(!isFullscreen)}
                     aria-label={isFullscreen ? "Exit fullscreen" : "Expand to fullscreen"}
                     title={isFullscreen ? "Exit fullscreen" : "Expand to fullscreen"}
-                    className="w-8 h-8 rounded-full text-gray-400 hover:text-white hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer"
+                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-full text-gray-400 hover:text-white hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer"
                   >
                     {isFullscreen ? (
-                      <Minimize2 className="w-4 h-4" />
+                      <Minimize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     ) : (
-                      <Maximize2 className="w-4 h-4" />
+                      <Maximize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     )}
                   </button>
 
@@ -1352,9 +1355,9 @@ export default function LiveChatWidget({
                     type="button"
                     onClick={handleClose}
                     title="Close Chat (Esc)"
-                    className="w-8 h-8 rounded-full text-gray-400 hover:text-white hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer"
+                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-full text-gray-400 hover:text-white hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer"
                   >
-                    <X className="w-4 h-4" />
+                    <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   </button>
                 </>
               )}
@@ -1363,10 +1366,10 @@ export default function LiveChatWidget({
 
           {/* Reconnecting Banner if Service Unavailable */}
           {connectionStatus === "reconnecting" && (
-            <div className="bg-amber-950/60 border-b border-amber-800/50 px-3 py-1.5 text-amber-200 text-xs flex items-center justify-between">
-              <span className="flex items-center gap-1.5">
+            <div className="bg-amber-950/60 border-b border-amber-800/50 px-2.5 py-1 sm:px-3 sm:py-1.5 text-amber-200 text-[11px] sm:text-xs flex items-center justify-between gap-2 shrink-0 min-w-0 chat-keyboard-compact-banner">
+              <span className="flex items-center gap-1.5 min-w-0">
                 <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span className="text-[11px] truncate">
+                <span className="text-[10px] sm:text-[11px] truncate">
                   {connectionErrorMsg || "Live chat service reconnecting..."}
                 </span>
               </span>
@@ -1382,12 +1385,12 @@ export default function LiveChatWidget({
 
           {/* Guest Mode Notice */}
           {!profile.visitorEmail && connectionStatus === "connected" && (
-            <div className="bg-cyan-950/40 border-b border-cyan-800/30 px-3 py-1 text-cyan-300 text-[11px] flex items-center justify-between">
-              <span>👤 Guest Chat active (no account required).</span>
+            <div className="bg-cyan-950/40 border-b border-cyan-800/30 px-2.5 py-0.5 sm:px-3 sm:py-1 text-cyan-300 text-[10px] sm:text-[11px] leading-tight flex items-center justify-between gap-2 shrink-0 min-w-0 chat-keyboard-compact-banner">
+              <span className="truncate min-w-0">👤 Guest Chat active (no account required).</span>
               <button
                 type="button"
                 onClick={() => setShowProfileModal(true)}
-                className="underline hover:text-white cursor-pointer font-medium ml-1"
+                className="underline hover:text-white cursor-pointer font-medium ml-1 shrink-0 whitespace-nowrap"
               >
                 Get email alerts / Restore chat
               </button>
@@ -1396,10 +1399,10 @@ export default function LiveChatWidget({
 
           {/* 24-Hour Message Retention Notice Banner */}
           {!dismissedRetentionNotice && (
-            <div className="bg-[#131b26] border-b border-cyan-500/25 px-3 py-1.5 text-gray-300 text-[11px] flex items-start justify-between gap-2 shadow-xs shrink-0">
-              <div className="flex items-start gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5" />
-                <span className="leading-snug text-gray-300">
+            <div className="bg-[#131b26] border-b border-cyan-500/25 px-2.5 py-1 sm:px-3 sm:py-1.5 text-gray-300 text-[10px] sm:text-[11px] flex items-start justify-between gap-1.5 sm:gap-2 shadow-xs shrink-0 min-w-0 chat-keyboard-compact-banner">
+              <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-cyan-400 shrink-0 mt-0.5" />
+                <span className={`leading-tight sm:leading-snug text-gray-300 chat-keyboard-compact-text ${isKeyboardOpen ? "line-clamp-1 sm:line-clamp-none" : "line-clamp-2 sm:line-clamp-none"}`}>
                   Messages are automatically and permanently deleted 24 hours after they are read by the recipient. Deleted messages cannot be recovered or viewed again.
                 </span>
               </div>
@@ -1409,7 +1412,7 @@ export default function LiveChatWidget({
                 title="Dismiss retention notice"
                 className="text-gray-400 hover:text-white p-0.5 shrink-0 cursor-pointer"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               </button>
             </div>
           )}
@@ -1417,12 +1420,12 @@ export default function LiveChatWidget({
           {/* Profile / Account Settings Modal */}
           {showProfileModal && (
             <div
-              className="absolute inset-0 z-40 bg-black/85 backdrop-blur-xs p-4 flex flex-col justify-center items-center overflow-y-auto"
+              className="absolute inset-0 z-40 bg-black/85 backdrop-blur-xs p-3 sm:p-4 flex flex-col justify-center items-center overflow-y-auto"
               data-lenis-prevent
               data-lenis-prevent-touch
             >
               <div
-                className="bg-[#17212b] border border-white/10 rounded-2xl p-5 w-full max-w-sm shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto custom-scrollbar settings-scrollbar overscroll-contain"
+                className="bg-[#17212b] border border-white/10 rounded-2xl p-4 sm:p-5 w-full max-w-sm shadow-2xl space-y-4 max-h-[85dvh] overflow-y-auto custom-scrollbar settings-scrollbar overscroll-contain"
                 data-lenis-prevent
                 data-lenis-prevent-touch
               >
@@ -1889,13 +1892,13 @@ export default function LiveChatWidget({
             onWheel={handleWheel}
             data-lenis-prevent
             data-lenis-prevent-touch
-            className="custom-scrollbar flex-1 min-h-0 min-w-0 overscroll-contain overflow-y-auto px-2.5 sm:px-3 py-3 sm:py-4 space-y-2.5 bg-[#0e1621]"
+            className="custom-scrollbar flex-1 min-h-0 min-w-0 overscroll-contain overflow-y-auto px-2 sm:px-3 py-2 sm:py-4 space-y-2 sm:space-y-2.5 bg-[#0e1621]"
           >
             {sessionSupersededMsg && (
-              <div className="bg-red-950/90 border border-red-500/50 text-red-200 text-xs p-3 rounded-xl flex items-center justify-between gap-2 shadow-lg mb-3">
-                <div className="flex items-center gap-2">
+              <div className="bg-red-950/90 border border-red-500/50 text-red-200 text-xs p-2.5 sm:p-3 rounded-xl flex items-center justify-between gap-2 shadow-lg mb-2 sm:mb-3">
+                <div className="flex items-center gap-2 min-w-0">
                   <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
-                  <span>{sessionSupersededMsg}</span>
+                  <span className="truncate sm:whitespace-normal">{sessionSupersededMsg}</span>
                 </div>
                 <button
                   type="button"
@@ -1911,21 +1914,21 @@ export default function LiveChatWidget({
             )}
 
             {messages.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center p-6 text-gray-400 space-y-2 select-none">
-                <div className="w-14 h-14 rounded-full bg-cyan-500/10 flex items-center justify-center text-cyan-400 mb-1">
-                  <Send className="w-6 h-6 rotate-45 ml-1" />
+              <div className="min-h-full flex flex-col items-center justify-center text-center p-3 sm:p-6 text-gray-400 space-y-1.5 sm:space-y-2 select-none">
+                <div className="w-10 h-10 sm:w-14 sm:h-14 rounded-full bg-cyan-500/10 flex items-center justify-center text-cyan-400 mb-0.5 sm:mb-1 shrink-0">
+                  <Send className="w-4 h-4 sm:w-6 sm:h-6 rotate-45 ml-0.5 sm:ml-1" />
                 </div>
-                <p className="text-sm font-semibold text-gray-200">
+                <p className="text-xs sm:text-sm font-semibold text-gray-200">
                   Direct Live Chat with Ganganathan
                 </p>
-                <p className="text-xs text-gray-400 leading-relaxed max-w-xs">
+                <p className="text-[11px] sm:text-xs text-gray-400 leading-relaxed max-w-xs">
                   Send a message about contracts, full-stack development, or general inquiries. Replies arrive directly here.
                 </p>
                 {!profile.visitorEmail && (
                   <button
                     type="button"
                     onClick={() => setShowProfileModal(true)}
-                    className="text-xs text-cyan-400 hover:underline pt-2 cursor-pointer font-medium"
+                    className="text-[11px] sm:text-xs text-cyan-400 hover:underline pt-1 sm:pt-2 cursor-pointer font-medium"
                   >
                     + Add email for instant reply notifications
                   </button>
@@ -2425,7 +2428,7 @@ export default function LiveChatWidget({
           </section>
 
           {/* Telegram Composer Footer */}
-          <footer className="p-2 sm:p-3 border-t border-white/10 bg-[#17212b] space-y-2 relative shrink-0 min-w-0">
+          <footer className="p-1.5 sm:p-3 border-t border-white/10 bg-[#17212b] space-y-1.5 sm:space-y-2 relative shrink-0 min-w-0">
             {/* Full Emoji Picker Drawer for Composer */}
             {showComposerEmojiPicker && (
               <div className="absolute bottom-14 sm:bottom-16 left-2 sm:left-3 right-2 sm:right-auto z-50">

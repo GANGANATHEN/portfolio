@@ -309,9 +309,10 @@ const Chatbot = ({
             !isEmbedded
               ? isFullscreen
                 ? {
-                    height: visualHeight ? `${visualHeight}px` : "100dvh",
-                    maxHeight: visualHeight ? `${visualHeight}px` : "100dvh",
-                    top: offsetTop > 0 ? `${offsetTop}px` : 0,
+                    height: isKeyboardOpen && visualHeight ? `${visualHeight}px` : "100dvh",
+                    maxHeight: isKeyboardOpen && visualHeight ? `${visualHeight}px` : "100dvh",
+                    top: isKeyboardOpen && offsetTop > 0 ? `${offsetTop}px` : 0,
+                    bottom: isKeyboardOpen ? "auto" : 0,
                     paddingTop: "env(safe-area-inset-top, 0px)",
                     paddingBottom: isKeyboardOpen ? "0px" : "env(safe-area-inset-bottom, 0px)",
                     paddingLeft: "env(safe-area-inset-left, 0px)",
@@ -325,7 +326,9 @@ const Chatbot = ({
                     height: isKeyboardOpen
                       ? `${Math.min(480, Math.max(260, visualHeight - 16))}px`
                       : "min(580px, calc(100dvh - 5.5rem))",
-                    maxHeight: `${Math.max(260, visualHeight - (isKeyboardOpen ? 12 : 24))}px`,
+                    maxHeight: isKeyboardOpen
+                      ? `${Math.max(260, visualHeight - 12)}px`
+                      : "calc(100dvh - 1.5rem)",
                   }
                 : undefined
               : undefined
@@ -339,14 +342,14 @@ const Chatbot = ({
           }
         >
           {/* Header */}
-          <header className="p-2.5 sm:p-3.5 border-b border-white/10 bg-white/5 flex justify-between items-center select-none shrink-0 min-w-0">
+          <header className="px-2.5 py-1.5 sm:p-3.5 border-b border-white/10 bg-white/5 flex justify-between items-center select-none shrink-0 min-w-0 chat-keyboard-compact-header">
             <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-              <div className="min-w-0">
-                <span className="text-[10px] uppercase tracking-widest text-cyan-400 font-mono block font-bold truncate">
+              <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+              <div className="min-w-0 flex items-baseline gap-1.5 sm:block">
+                <span className="text-[10px] uppercase tracking-wider sm:tracking-widest text-cyan-400 font-mono shrink-0 sm:block font-bold truncate">
                   AI ASSISTANT
                 </span>
-                <span className="text-xs font-semibold text-white truncate block">
+                <span className="text-[11px] sm:text-xs font-semibold text-white truncate block">
                   {botNickname}
                 </span>
               </div>
@@ -360,7 +363,7 @@ const Chatbot = ({
                   onClick={() => setIsFullscreen(!isFullscreen)}
                   aria-label={isFullscreen ? "Exit fullscreen" : "Expand to fullscreen"}
                   title={isFullscreen ? "Exit fullscreen" : "Expand to fullscreen"}
-                  className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
                 >
                   {isFullscreen ? (
                     <Minimize2 className="w-3.5 h-3.5" />
@@ -375,7 +378,7 @@ const Chatbot = ({
                   onClick={handleClose}
                   aria-label="Close Chat"
                   title="Close (Esc)"
-                  className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white flex items-center justify-center transition-colors text-sm cursor-pointer"
+                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white flex items-center justify-center transition-colors text-sm cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -385,7 +388,7 @@ const Chatbot = ({
 
           {/* Voice Error Notification Banner */}
           {voiceError && (
-            <div className="bg-red-500/15 border-b border-red-500/30 px-3 py-2 flex items-center justify-between text-xs text-red-300 font-mono shrink-0 min-w-0">
+            <div className="bg-red-500/15 border-b border-red-500/30 px-2.5 py-1 sm:px-3 sm:py-2 flex items-center justify-between text-[11px] sm:text-xs text-red-300 font-mono shrink-0 min-w-0 chat-keyboard-compact-banner">
               <span className="flex items-center gap-1.5 truncate min-w-0">
                 <AlertCircle className="w-3.5 h-3.5 shrink-0 text-red-400" />
                 <span className="truncate">{voiceError}</span>
@@ -406,7 +409,7 @@ const Chatbot = ({
             data-lenis-prevent
             data-lenis-prevent-touch
             ref={scrollRef}
-            className={`custom-scrollbar flex-1 min-h-0 min-w-0 overflow-y-auto overscroll-contain p-3 sm:p-4 space-y-3 sm:space-y-4 ${
+            className={`custom-scrollbar flex-1 min-h-0 min-w-0 overflow-y-auto overscroll-contain p-2.5 sm:p-4 space-y-2.5 sm:space-y-4 ${
               isFullscreen ? "max-w-4xl w-full mx-auto" : ""
             }`}
           >
@@ -416,7 +419,7 @@ const Chatbot = ({
                 className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
                 <div
-                  className={`p-3 sm:p-3.5 rounded-2xl text-xs sm:text-sm leading-relaxed max-w-[85%] sm:max-w-[80%] [overflow-wrap:anywhere] break-words min-w-0 ${
+                  className={`px-3 py-2 sm:p-3.5 rounded-2xl text-xs sm:text-sm leading-relaxed max-w-[85%] sm:max-w-[80%] [overflow-wrap:anywhere] break-words min-w-0 ${
                     msg.role === "bot"
                       ? "bg-white/5 text-gray-200 border border-white/5 rounded-bl-sm"
                       : "bg-cyan-500 text-black font-medium rounded-br-sm shadow-md"
@@ -429,7 +432,7 @@ const Chatbot = ({
 
             {isLoading && (
               <div className="flex justify-start">
-                <div className="p-3 sm:p-3.5 rounded-2xl rounded-bl-sm bg-white/5 border border-white/5 text-gray-300 text-xs sm:text-sm flex items-center gap-1.5">
+                <div className="px-3 py-2 sm:p-3.5 rounded-2xl rounded-bl-sm bg-white/5 border border-white/5 text-gray-300 text-xs sm:text-sm flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-cyan-400 animate-bounce [animation-delay:-0.3s]" />
                   <span className="w-2 h-2 rounded-full bg-cyan-400 animate-bounce [animation-delay:-0.15s]" />
                   <span className="w-2 h-2 rounded-full bg-cyan-400 animate-bounce" />
@@ -441,7 +444,7 @@ const Chatbot = ({
 
           {/* Composer Footer */}
           <footer
-            className={`p-2.5 sm:p-3 border-t border-white/10 bg-white/5 shrink-0 min-w-0 ${
+            className={`p-1.5 sm:p-3 border-t border-white/10 bg-white/5 shrink-0 min-w-0 ${
               isFullscreen ? "max-w-4xl w-full mx-auto" : ""
             }`}
           >

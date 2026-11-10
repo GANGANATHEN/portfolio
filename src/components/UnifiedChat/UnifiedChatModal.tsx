@@ -158,9 +158,10 @@ export default function UnifiedChatModal({ initialTab = "chatbot" }: UnifiedChat
           style={
             isFullscreen
               ? {
-                  height: visualHeight ? `${visualHeight}px` : "100dvh",
-                  maxHeight: visualHeight ? `${visualHeight}px` : "100dvh",
-                  top: offsetTop > 0 ? `${offsetTop}px` : 0,
+                  height: isKeyboardOpen && visualHeight ? `${visualHeight}px` : "100dvh",
+                  maxHeight: isKeyboardOpen && visualHeight ? `${visualHeight}px` : "100dvh",
+                  top: isKeyboardOpen && offsetTop > 0 ? `${offsetTop}px` : 0,
+                  bottom: isKeyboardOpen ? "auto" : 0,
                   paddingTop: "env(safe-area-inset-top, 0px)",
                   paddingBottom: isKeyboardOpen ? "0px" : "env(safe-area-inset-bottom, 0px)",
                   paddingLeft: "env(safe-area-inset-left, 0px)",
@@ -174,7 +175,9 @@ export default function UnifiedChatModal({ initialTab = "chatbot" }: UnifiedChat
                   height: isKeyboardOpen
                     ? `${Math.min(480, Math.max(260, visualHeight - 16))}px`
                     : "min(580px, calc(100dvh - 5.5rem))",
-                  maxHeight: `${Math.max(260, visualHeight - (isKeyboardOpen ? 12 : 24))}px`,
+                  maxHeight: isKeyboardOpen
+                    ? `${Math.max(260, visualHeight - 12)}px`
+                    : "calc(100dvh - 1.5rem)",
                 }
               : undefined
           }
@@ -185,19 +188,19 @@ export default function UnifiedChatModal({ initialTab = "chatbot" }: UnifiedChat
           }
         >
           {/* Top Segmented Tab Header */}
-          <header className="px-2.5 py-2 sm:px-4 sm:py-3 border-b border-white/10 bg-[#121824] flex items-center justify-between select-none shadow-sm shrink-0 min-w-0">
+          <header className="px-2 py-1 sm:px-4 sm:py-3 border-b border-white/10 bg-[#121824] flex items-center justify-between select-none shadow-sm shrink-0 min-w-0 chat-keyboard-compact-header">
             {/* Segmented Control Tabs */}
-            <div className="flex items-center bg-[#070a10] p-1 rounded-xl border border-white/5 text-[11px] sm:text-xs font-mono min-w-0">
+            <div className="flex items-center bg-[#070a10] p-0.5 sm:p-1 rounded-lg sm:rounded-xl border border-white/5 text-[11px] sm:text-xs font-mono min-w-0">
               <button
                 type="button"
                 onClick={() => setActiveTab("chatbot")}
-                className={`px-2.5 sm:px-3 py-1.5 rounded-lg flex items-center gap-1 sm:gap-1.5 transition-all cursor-pointer ${
+                className={`px-2 py-1 sm:px-3 sm:py-1.5 rounded-md sm:rounded-lg flex items-center gap-1 sm:gap-1.5 transition-all cursor-pointer ${
                   activeTab === "chatbot"
                     ? "bg-cyan-500 text-black font-bold shadow-md"
                     : "text-gray-400 hover:text-white"
                 }`}
               >
-                <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                <Sparkles className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" />
                 <span className="truncate">AI Assistant</span>
               </button>
 
@@ -207,13 +210,13 @@ export default function UnifiedChatModal({ initialTab = "chatbot" }: UnifiedChat
                   setActiveTab("livechat");
                   setLiveChatUnread(0);
                 }}
-                className={`px-2.5 sm:px-3 py-1.5 rounded-lg flex items-center gap-1 sm:gap-1.5 transition-all cursor-pointer relative ${
+                className={`px-2 py-1 sm:px-3 sm:py-1.5 rounded-md sm:rounded-lg flex items-center gap-1 sm:gap-1.5 transition-all cursor-pointer relative ${
                   activeTab === "livechat"
                     ? "bg-cyan-500 text-black font-bold shadow-md"
                     : "text-gray-400 hover:text-white"
                 }`}
               >
-                <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                <MessageSquare className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" />
                 <span className="truncate">Live Chat</span>
                 {liveChatUnread > 0 && activeTab !== "livechat" && (
                   <span className="w-2 h-2 rounded-full bg-pink-500 inline-block shrink-0" />
@@ -228,9 +231,9 @@ export default function UnifiedChatModal({ initialTab = "chatbot" }: UnifiedChat
                 onClick={() => setIsFullscreen(!isFullscreen)}
                 aria-label={isFullscreen ? "Exit fullscreen" : "Expand to fullscreen"}
                 title={isFullscreen ? "Exit fullscreen" : "Expand to fullscreen"}
-                className="w-8 h-8 rounded-full text-gray-400 hover:text-white hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer"
+                className="w-7 h-7 sm:w-8 sm:h-8 rounded-full text-gray-400 hover:text-white hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer"
               >
-                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                {isFullscreen ? <Minimize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <Maximize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
               </button>
 
               <button
@@ -238,9 +241,9 @@ export default function UnifiedChatModal({ initialTab = "chatbot" }: UnifiedChat
                 onClick={handleClose}
                 aria-label="Close Chat"
                 title="Close (Esc)"
-                className="w-8 h-8 rounded-full text-gray-400 hover:text-white hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer"
+                className="w-7 h-7 sm:w-8 sm:h-8 rounded-full text-gray-400 hover:text-white hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </button>
             </div>
           </header>
