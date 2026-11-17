@@ -36,6 +36,7 @@ import {
   grade,
   shachat,
   luxion,
+  parcelynx,
 } from "../../public/assets";
 
 export const navLinks = [
@@ -401,5 +402,31 @@ export const projects = [
     image: luxion,
     source_code_link: null,
     url: null,
+  },
+  {
+    name: "Parcelynx",
+    description:
+      "A modern parcel tracking and management platform featuring real-time shipment updates, data visualization, and Excel integration.",
+    tags: [
+      {
+        name: "Next.js",
+        color: "blue-text-gradient",
+      },
+      {
+        name: "Tailwind CSS",
+        color: "pink-text-gradient",
+      },
+      {
+        name: "Recharts",
+        color: "orange-text-gradient",
+      },
+      {
+        name: "Excel",
+        color: "green-text-gradient",
+      },
+    ],
+    image: parcelynx,
+    source_code_link: "https://github.com/GANGANATHEN/ParcelFlow",
+    url: "https://parcelynx.vercel.app/",
   },
 ];

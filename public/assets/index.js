@@ -41,6 +41,7 @@ import scoreboard from "./prjectimg/cricket.png";
 import grade from "./prjectimg/grademark.png"
 import shachat from "./prjectimg/shachat.png"
 import luxion from "./prjectimg/luxion.jpeg"
+import parcelynx from "./prjectimg/parcelynx.png"
 
 export {
   logo,
@@ -82,5 +83,6 @@ export {
   scoreboard,
   grade,
   shachat,
-  luxion
+  luxion,
+  parcelynx
 };
