@@ -42,6 +42,7 @@ import grade from "./prjectimg/grademark.png"
 import shachat from "./prjectimg/shachat.png"
 import luxion from "./prjectimg/luxion.jpeg"
 import parcelynx from "./prjectimg/parcelynx.png"
+import gameste from "./prjectimg/gamesta.png"
 
 export {
   logo,
@@ -84,5 +85,6 @@ export {
   grade,
   shachat,
   luxion,
-  parcelynx
+  parcelynx,
+  gameste,
 };

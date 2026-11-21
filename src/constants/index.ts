@@ -37,6 +37,7 @@ import {
   shachat,
   luxion,
   parcelynx,
+  gameste,
 } from "../../public/assets";
 
 export const navLinks = [
@@ -314,6 +315,32 @@ export const projects = [
     image: appleimg,
     source_code_link: "https://github.com/GANGANATHEN/Project_React",
     url: "https://ganganathan-pple.netlify.app",
+  },
+  {
+    name: "GAMESTA",
+    description:
+      "A responsive recreation of the GAMESTA website, featuring its original content and layout, enhanced with custom animations and interactive UI elements.",
+    tags: [
+      {
+        name: "Next.js",
+        color: "blue-text-gradient",
+      },
+      {
+        name: "TypeScript",
+        color: "orange-text-gradient",
+      },
+      {
+        name: "Tailwind CSS",
+        color: "pink-text-gradient",
+      },
+      {
+        name: "GSAP",
+        color: "green-text-gradient",
+      },
+    ],
+    image: gameste,
+    source_code_link: "https://github.com/GANGANATHEN/gamesta", //
+    url: "https://gameste.vercel.app/",
   },
   {
     name: "ShaChat",
