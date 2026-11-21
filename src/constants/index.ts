@@ -316,7 +316,7 @@ export const projects = [
     ],
     image: appleimg,
     source_code_link: "https://github.com/GANGANATHEN/Project_React",
-    url: "https://ganganathan-pple.netlify.app",
+    url: null,
   },
   {
     name: "GAMESTA",
