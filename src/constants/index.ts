@@ -362,7 +362,7 @@ export const projects = [
         color: "pink-text-gradient",
       },
       {
-        name: "Supabase",
+        name: "MongoDB",
         color: "green-text-gradient",
       },
       {
