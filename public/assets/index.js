@@ -39,10 +39,12 @@ import sociallink from "./prjectimg/sociallink.png";
 import qrcode from "./prjectimg/qrcode.png";
 import scoreboard from "./prjectimg/cricket.png";
 import grade from "./prjectimg/grademark.png"
+import gameste from "./prjectimg/gamesta.png"
+import astroarcade from "./prjectimg/astroarcade.png" 
+import gitbook from "./prjectimg/githandbook.png"
 import shachat from "./prjectimg/shachat.png"
 import luxion from "./prjectimg/luxion.jpeg"
 import parcelynx from "./prjectimg/parcelynx.png"
-import gameste from "./prjectimg/gamesta.png"
 
 export {
   logo,
@@ -83,8 +85,10 @@ export {
   qrcode,
   scoreboard,
   grade,
+  gameste,
+  astroarcade,
+  gitbook,
   shachat,
   luxion,
   parcelynx,
-  gameste,
 };

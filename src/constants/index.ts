@@ -38,6 +38,8 @@ import {
   luxion,
   parcelynx,
   gameste,
+  astroarcade,
+  gitbook,
 } from "../../public/assets";
 
 export const navLinks = [
@@ -341,6 +343,58 @@ export const projects = [
     image: gameste,
     source_code_link: "https://github.com/GANGANATHEN/gamesta",
     url: "https://gameste.vercel.app/",
+  },
+  {
+    name: "ASTROARCADE",
+    description:
+      "A fun, interactive gaming platform featuring multiple games, responsive leaderboards, and real-time player chat. Built with immersive 3D visuals, smooth animations, and an engaging user experience.",
+    tags: [
+      {
+        name: "Next.js",
+        color: "blue-text-gradient",
+      },
+      {
+        name: "TypeScript",
+        color: "orange-text-gradient",
+      },
+      {
+        name: "Tailwind CSS",
+        color: "pink-text-gradient",
+      },
+      {
+        name: "Supabase",
+        color: "green-text-gradient",
+      },
+      {
+        name: "Three.js",
+        color: "blue-text-gradient",
+      },
+      {
+        name: "GSAP",
+        color: "green-text-gradient",
+      },
+    ],
+    image: astroarcade,
+    source_code_link: "https://github.com/GANGANATHEN/astroarcade",
+    url: null,
+  },
+  {
+    name: "GitBook",
+    description:
+      "A clean and responsive Git commands reference website featuring an organized documentation layout, easy navigation, and a user-friendly interface for exploring everyday Git commands.",
+    tags: [
+      {
+        name: "HTML5",
+        color: "blue-text-gradient",
+      },
+      {
+        name: "CSS3",
+        color: "pink-text-gradient",
+      },
+    ],
+    image: gitbook,
+    source_code_link: "https://github.com/GANGANATHEN/git-command",
+    url: "https://githandbook.vercel.app/",
   },
   {
     name: "ShaChat",
