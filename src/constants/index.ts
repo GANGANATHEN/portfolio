@@ -339,7 +339,7 @@ export const projects = [
       },
     ],
     image: gameste,
-    source_code_link: "https://github.com/GANGANATHEN/gamesta", //
+    source_code_link: "https://github.com/GANGANATHEN/gamesta",
     url: "https://gameste.vercel.app/",
   },
   {
